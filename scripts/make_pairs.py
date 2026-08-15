@@ -1,0 +1,202 @@
+#!/usr/bin/env python3
+"""
+make_pairs.py — Produce anonymised source-tree pairs for each par_id.
+
+Reads:
+  out/permutation.json           — seed + ordered par_id list
+  out/sealed/parid_to_sha.json   — par_id -> qualifying commit SHA
+  out/sealed/side_map.json       — par_id -> [side_before, side_after]
+                                   (side_before = label for parent commit,
+                                    side_after  = label for qualifying commit)
+
+For each par_id writes two source trees:
+  out/pairs/<par_id>/<side_before>/   — files at the parent commit
+  out/pairs/<par_id>/<side_after>/    — files at the qualifying commit
+
+Only files matching the §4.1 selector are included.  The directory
+structure inside each side mirrors the original repository layout.
+B cannot infer the direction from the tree layout alone (no commit
+messages, PR numbers, dates, or diff annotations are written).
+
+Usage:
+    python scripts/make_pairs.py --repo <path_to_torchtitan>
+"""
+
+import argparse
+import fnmatch
+import subprocess
+import sys
+from pathlib import Path
+
+# ── Paths ────────────────────────────────────────────────────────────────────
+
+PERMUTATION_PATH   = Path("out/permutation.json")
+PARID_TO_SHA_PATH  = Path("out/sealed/parid_to_sha.json")
+SIDE_MAP_PATH      = Path("out/sealed/side_map.json")
+PAIRS_DIR          = Path("out/pairs")
+
+# ── §4.1 selector rules (literal, IMMUTABLE) ─────────────────────────────────
+# Copied verbatim from population.py so that make_pairs.py is self-contained.
+
+SELECTOR_RULES = [
+    ("torchtitan/distributed/**/*.py", None),
+    (
+        "torchtitan/models/**/",
+        {
+            "model.py", "moe.py", "parallelize.py", "sharding.py",
+            "expert_parallel.py", "token_dispatcher.py", "attention.py",
+            "decoder.py", "feed_forward.py", "embedding.py", "linear.py",
+            "nn_modules.py", "rmsnorm.py", "vision_encoder.py",
+            "vision_encoder_sharding.py", "mtp.py", "dist_gemm.py", "layers.py",
+        },
+    ),
+    ("torchtitan/models/common/config_utils.py", None),
+    (
+        "torchtitan/experiments/**/",
+        {
+            "model.py", "parallelize.py", "pipeline.py", "moe_replacement.py",
+            "hf_sharding.py", "module_conversion.py",
+        },
+    ),
+    ("torchtitan/experiments/**/ep_*.py", None),
+    ("torchtitan/protocols/module.py", None),
+    ("torchtitan/protocols/sharding.py", None),
+    ("torchtitan/overrides/moe_token_dispatcher.py", None),
+]
+
+
+def glob_match(pattern: str, path: str) -> bool:
+    """Match *path* against *pattern* supporting '**' (any depth of dirs)."""
+    pattern_parts = pattern.split("/")
+    path_parts    = path.split("/")
+
+    def _match(pp: list, tp: list) -> bool:
+        if not pp and not tp:
+            return True
+        if not pp:
+            return False
+        if pp[0] == "**":
+            rest_pp = pp[1:]
+            for i in range(len(tp) + 1):
+                if _match(rest_pp, tp[i:]):
+                    return True
+            return False
+        if not tp:
+            return False
+        if fnmatch.fnmatch(tp[0], pp[0]):
+            return _match(pp[1:], tp[1:])
+        return False
+
+    return _match(pattern_parts, path_parts)
+
+
+def path_matches_selector(path: str) -> bool:
+    """Return True if *path* matches any §4.1 selector rule."""
+    for pattern, allowed_names in SELECTOR_RULES:
+        if allowed_names is None:
+            if glob_match(pattern, path):
+                return True
+        else:
+            parts    = path.split("/")
+            filename = parts[-1]
+            if filename not in allowed_names:
+                continue
+            dir_pattern = pattern.rstrip("/")
+            dirpart     = "/".join(parts[:-1])
+            if glob_match(dir_pattern, dirpart):
+                return True
+    return False
+
+
+# ── Git helpers ───────────────────────────────────────────────────────────────
+
+def git(args: list[str], cwd: str) -> str:
+    result = subprocess.run(
+        ["git"] + args,
+        cwd=cwd,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=True,
+    )
+    return result.stdout.decode("utf-8", errors="replace")
+
+
+def list_selector_files(repo: str, sha: str) -> list[str]:
+    """Return all selector-matching paths present in *sha* of *repo*."""
+    raw = git(["ls-tree", "-r", "--name-only", sha], cwd=repo)
+    return [p for p in raw.splitlines() if p and path_matches_selector(p)]
+
+
+def get_parent_sha(repo: str, sha: str) -> str:
+    return git(["rev-parse", f"{sha}^"], cwd=repo).strip()
+
+
+def write_tree(repo: str, sha: str, dest: Path) -> int:
+    """Extract selector files from *sha* into *dest*; return file count."""
+    paths = list_selector_files(repo, sha)
+    count = 0
+    for rel_path in paths:
+        content = git(["show", f"{sha}:{rel_path}"], cwd=repo)
+        out_file = dest / rel_path
+        out_file.parent.mkdir(parents=True, exist_ok=True)
+        out_file.write_text(content, encoding="utf-8")
+        count += 1
+    return count
+
+
+# ── Main ──────────────────────────────────────────────────────────────────────
+
+def main() -> None:
+    import json
+
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--repo",
+        required=True,
+        help="Path to pytorch/torchtitan checkout",
+    )
+    args = parser.parse_args()
+    repo = args.repo
+
+    # Guard: refuse to overwrite the pairs directory
+    if PAIRS_DIR.exists():
+        print(f"ERROR: {PAIRS_DIR} already exists; refusing to overwrite.", file=sys.stderr)
+        sys.exit(1)
+
+    # Load inputs
+    for p in (PERMUTATION_PATH, PARID_TO_SHA_PATH, SIDE_MAP_PATH):
+        if not p.exists():
+            print(f"ERROR: {p} not found.", file=sys.stderr)
+            sys.exit(1)
+
+    permutation  = json.loads(PERMUTATION_PATH.read_text(encoding="utf-8"))
+    parid_to_sha = json.loads(PARID_TO_SHA_PATH.read_text(encoding="utf-8"))
+    side_map     = json.loads(SIDE_MAP_PATH.read_text(encoding="utf-8"))
+
+    par_ids: list[str] = permutation["par_ids"]
+
+    PAIRS_DIR.mkdir(parents=True, exist_ok=True)
+
+    total_pairs = len(par_ids)
+    for i, par_id in enumerate(par_ids, 1):
+        sha        = parid_to_sha[par_id]
+        sides      = side_map[par_id]          # [side_before, side_after]
+        side_before, side_after = sides[0], sides[1]
+
+        parent_sha = get_parent_sha(repo, sha)
+
+        pair_dir = PAIRS_DIR / par_id
+
+        before_dir = pair_dir / side_before
+        after_dir  = pair_dir / side_after
+
+        n_before = write_tree(repo, parent_sha, before_dir)
+        n_after  = write_tree(repo, sha,        after_dir)
+
+        print(f"[{i}/{total_pairs}] {par_id}  {side_before}={n_before} files  {side_after}={n_after} files")
+
+    print(f"\nDone. {total_pairs} pairs written to {PAIRS_DIR}/")
+
+
+if __name__ == "__main__":
+    main()
