@@ -15,8 +15,8 @@ For each par_id writes two source trees:
 
 Only files matching the §4.1 selector are included.  The directory
 structure inside each side mirrors the original repository layout.
-B cannot infer the direction from the tree layout alone (no commit
-messages, PR numbers, dates, or diff annotations are written).
+The blind reviewer cannot infer the direction from the tree layout alone
+(no commit messages, PR numbers, dates, or diff annotations are written).
 
 Usage:
     python scripts/make_pairs.py --repo <path_to_torchtitan>
@@ -121,6 +121,17 @@ def git(args: list[str], cwd: str) -> str:
     return result.stdout.decode("utf-8", errors="replace")
 
 
+def git_bytes(args: list[str], cwd: str) -> bytes:
+    result = subprocess.run(
+        ["git"] + args,
+        cwd=cwd,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=True,
+    )
+    return result.stdout
+
+
 def list_selector_files(repo: str, sha: str) -> list[str]:
     """Return all selector-matching paths present in *sha* of *repo*."""
     raw = git(["ls-tree", "-r", "--name-only", sha], cwd=repo)
@@ -136,10 +147,10 @@ def write_tree(repo: str, sha: str, dest: Path) -> int:
     paths = list_selector_files(repo, sha)
     count = 0
     for rel_path in paths:
-        content = git(["show", f"{sha}:{rel_path}"], cwd=repo)
+        content = git_bytes(["show", f"{sha}:{rel_path}"], cwd=repo)
         out_file = dest / rel_path
         out_file.parent.mkdir(parents=True, exist_ok=True)
-        out_file.write_text(content, encoding="utf-8")
+        out_file.write_bytes(content)
         count += 1
     return count
 
@@ -174,6 +185,20 @@ def main() -> None:
     side_map     = json.loads(SIDE_MAP_PATH.read_text(encoding="utf-8"))
 
     par_ids: list[str] = permutation["par_ids"]
+
+    # Pre-flight: ensure every par_id is present in both sealed maps
+    missing_sha  = [p for p in par_ids if p not in parid_to_sha]
+    missing_side = [p for p in par_ids if p not in side_map]
+    if missing_sha or missing_side:
+        if missing_sha:
+            print(f"ERROR: {len(missing_sha)} par_id(s) missing from {PARID_TO_SHA_PATH}:", file=sys.stderr)
+            for p in missing_sha:
+                print(f"  {p}", file=sys.stderr)
+        if missing_side:
+            print(f"ERROR: {len(missing_side)} par_id(s) missing from {SIDE_MAP_PATH}:", file=sys.stderr)
+            for p in missing_side:
+                print(f"  {p}", file=sys.stderr)
+        sys.exit(1)
 
     PAIRS_DIR.mkdir(parents=True, exist_ok=True)
 
