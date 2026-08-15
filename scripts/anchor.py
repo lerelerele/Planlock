@@ -49,7 +49,7 @@ def main() -> None:
     sorted_by_hash = sorted(conjunto_b, key=anchor_hash)
     controls = sorted_by_hash[:n_select]
 
-    now_utc = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+    now_utc = datetime.now(timezone.utc).isoformat(timespec="microseconds").replace("+00:00", "Z")
 
     SEALED_DIR.mkdir(parents=True, exist_ok=True)
     output = {

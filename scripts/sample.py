@@ -98,7 +98,7 @@ def main() -> None:
         encoding="utf-8",
     )
 
-    # 4b. Write out/sealed/side_map.json
+    # 5c. Write out/sealed/side_map.json
     SIDE_MAP_PATH.write_text(
         json.dumps(side_map, indent=2, sort_keys=True, ensure_ascii=True) + "\n",
         encoding="utf-8",
