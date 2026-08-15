@@ -17,6 +17,7 @@ import json
 import re
 import subprocess
 import sys
+import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -260,8 +261,8 @@ def run(repo: str, out_path: Path):
 
     # Compute per-week rates
     total_weeks = (window_end - window_start).days / 7.0
-    total_rate  = total_count / total_weeks
-    qual_rate   = qualifying_count / total_weeks
+    total_rate  = round(total_count / total_weeks, 4)
+    qual_rate   = round(qualifying_count / total_weeks, 4)
 
     # Build output
     output = {
@@ -269,7 +270,9 @@ def run(repo: str, out_path: Path):
         "window_end":   WINDOW_END,
         "ref_commit":   REF_COMMIT,
         "total_count":  total_count,
+        "total_rate_per_week": total_rate,
         "qualifying_count": qualifying_count,
+        "qualifying_rate_per_week": qual_rate,
         "qualifying": qualifying,
     }
 
@@ -326,7 +329,6 @@ def main():
             sys.exit(1)
         existing = out_path.read_bytes()
         # Write to a temp path
-        import tempfile, os
         with tempfile.NamedTemporaryFile(delete=False, suffix=".json") as tmp:
             tmp_path = Path(tmp.name)
         try:
