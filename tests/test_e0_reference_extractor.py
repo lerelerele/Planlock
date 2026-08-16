@@ -115,6 +115,52 @@ def unused():
         self.assertEqual(resolved["set_dense_ffn_sharding"], "ACTIVE_MANIFEST")
         self.assertEqual(resolved["_moe_sharding_config"], "ACTIVE_MANIFEST")
 
+    def test_resolves_reviewed_boundary_transition(self) -> None:
+        candidate = MODULE.Candidate(
+            pe="PE_dense",
+            kind="sharding_boundary",
+            symbol="ShardingConfig",
+            source="torchtitan/models/common/decoder_sharding.py",
+            line=91,
+            enclosing_function="rowwise_config",
+            evidence="fixture",
+            route_status="ACTIVE_STATIC",
+        )
+        resolved = MODULE.resolve_candidate_semantics(candidate)
+        self.assertEqual(resolved.transition, "ReduceScatter")
+
+    def test_excludes_inactive_dist_gemm_declaration(self) -> None:
+        candidate = MODULE.Candidate(
+            pe="PE_dense",
+            kind="sharding_boundary",
+            symbol="ShardingConfig",
+            source="torchtitan/models/common/decoder_sharding.py",
+            line=297,
+            enclosing_function="set_dense_ffn_sharding",
+            evidence="fixture",
+            route_status="ACTIVE_MANIFEST",
+        )
+        resolved = MODULE.resolve_candidate_semantics(candidate)
+        self.assertEqual(resolved.route_status, "UNREACHABLE_MANIFEST")
+
+    def test_transition_inventory_deduplicates_backend_calls(self) -> None:
+        items = [
+            MODULE.Candidate(
+                pe="PE_moe",
+                kind="explicit_communication",
+                symbol=symbol,
+                source="dispatcher.py",
+                line=line,
+                enclosing_function="_dispatch_token_exchange",
+                evidence="fixture",
+                transition="Dispatch",
+                route_status="ACTIVE_STATIC",
+            )
+            for symbol, line in (("all_to_all_single", 1), ("spmd.all_to_all", 2))
+        ]
+        inventory = MODULE.transition_inventory(items)
+        self.assertEqual(inventory["PE_moe"]["Dispatch"], 1)
+
 
 if __name__ == "__main__":
     unittest.main()

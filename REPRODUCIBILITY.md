@@ -74,6 +74,10 @@ builds a static call graph from each model's sharding entrypoint. Candidates
 are labelled `ACTIVE_STATIC`, `ACTIVE_MANIFEST`, `CONDITIONAL_RUNTIME`,
 `UNREACHABLE_STATIC`, or `UNREACHABLE_MANIFEST`; unreachable candidates remain
 in the audit output but cannot contribute to a future E6 calculation.
+The prototype transition inventory counts each active `ShardingConfig`
+boundary declaration once and collapses alternate backend implementations of
+the same explicit communication helper into one logical template. These are
+still candidate transitions, not the complete seven-field fingerprints.
 
 Typical workflow:
 

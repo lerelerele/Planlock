@@ -12,7 +12,7 @@ import ast
 import json
 import subprocess
 import sys
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from pathlib import Path
 
 from e0_manifest import validate as validate_manifest
@@ -221,6 +221,85 @@ def resolve_manifest_conditions(
     return resolved
 
 
+def resolve_candidate_semantics(candidate: Candidate) -> Candidate:
+    """Resolve reviewed per-declaration branches and boundary transitions."""
+    route_status = candidate.route_status
+    key = (Path(candidate.source).name, candidate.enclosing_function, candidate.line)
+    inactive_standard_backend = {
+        ("decoder_sharding.py", "set_gqa_attention_sharding", 219),
+        ("decoder_sharding.py", "set_dense_ffn_sharding", 297),
+        ("moe_sharding.py", "_router_sharding_config", 114),
+    }
+    if key in inactive_standard_backend and route_status in {
+        "ACTIVE_STATIC",
+        "ACTIVE_MANIFEST",
+    }:
+        return replace(candidate, route_status="UNREACHABLE_MANIFEST")
+
+    transition_rules = {
+        ("decoder_sharding.py", "rowwise_config", 91): (
+            "ReduceScatter",
+            "Partial(tp)→Shard(seq) with sequence parallel enabled",
+        ),
+        ("decoder_sharding.py", "pre_lm_head_norm_config", 132): (
+            "AllGather",
+            "Shard(seq)→Replicate(tp) before LMHead",
+        ),
+        ("decoder_sharding.py", "set_gqa_attention_sharding", 192): (
+            "AllGather",
+            "Shard(seq)→Replicate(tp) at attention boundary",
+        ),
+        ("decoder_sharding.py", "set_gqa_inner_attention_local_map", 247): (
+            "AllGather",
+            "Shard(seq)→Replicate(cp) for K/V local-map inputs",
+        ),
+        ("decoder_sharding.py", "set_dense_ffn_sharding", 288): (
+            "AllGather",
+            "Shard(seq)→Replicate(tp) at dense FFN boundary",
+        ),
+        ("decoder_sharding.py", "set_decoder_sharding_config", 320): (
+            "ReduceScatter",
+            "Partial(tp)→Shard(seq) at embedding output",
+        ),
+        ("sharding.py", "_set_deepseek_v3_layer_sharding", 98): (
+            "AllGather",
+            "Shard(seq)→Replicate(tp) at MLA attention boundary",
+        ),
+        ("moe_sharding.py", "_shared_expert_rowwise_config", 149): (
+            "ReduceScatter",
+            "Partial(tp)→Shard(seq) at shared-expert output",
+        ),
+        ("moe_sharding.py", "_shared_experts_sharding_configs", 184): (
+            "AllGather",
+            "Shard(seq)→Replicate(tp) at shared-expert input",
+        ),
+    }
+    if candidate.kind == "sharding_boundary" and key in transition_rules:
+        transition, basis = transition_rules[key]
+        existing = candidate.classification_basis
+        combined = f"{existing}; {basis}" if existing else basis
+        return replace(
+            candidate,
+            transition=transition,
+            classification_basis=combined,
+            status="RULE_CLASSIFIED_PROTOTYPE",
+        )
+    if (
+        candidate.kind == "sharding_boundary"
+        and route_status in {"ACTIVE_STATIC", "ACTIVE_MANIFEST"}
+        and candidate.transition is None
+    ):
+        return replace(
+            candidate,
+            transition="NONE",
+            classification_basis=(candidate.classification_basis or "")
+            + ("; " if candidate.classification_basis else "")
+            + "no src→dst placement change in reviewed declaration",
+            status="RULE_CLASSIFIED_PROTOTYPE",
+        )
+    return candidate
+
+
 def classify_candidate(
     kind: str, function: str
 ) -> tuple[str | None, str | None, str | None]:
@@ -261,7 +340,7 @@ def logical_transitions(candidates: list[Candidate]) -> list[dict[str, object]]:
     """Collapse alternate backend calls into one logical transition template."""
     grouped: dict[tuple[str, str, str, str], list[Candidate]] = {}
     for item in candidates:
-        if item.transition is None:
+        if item.transition is None or item.kind != "explicit_communication":
             continue
         key = (item.pe, item.source, item.enclosing_function, item.transition)
         grouped.setdefault(key, []).append(item)
@@ -278,6 +357,25 @@ def logical_transitions(candidates: list[Candidate]) -> list[dict[str, object]]:
         }
         for key, items in sorted(grouped.items())
     ]
+
+
+def transition_inventory(candidates: list[Candidate]) -> dict[str, dict[str, int]]:
+    """Count active boundary declarations plus deduplicated logical comms."""
+    result: dict[str, dict[str, int]] = {pe: {} for pe in PE_FILES}
+    active = {"ACTIVE_STATIC", "ACTIVE_MANIFEST"}
+    for item in candidates:
+        if (
+            item.kind == "sharding_boundary"
+            and item.route_status in active
+            and item.transition is not None
+        ):
+            counts = result[item.pe]
+            counts[item.transition] = counts.get(item.transition, 0) + 1
+    for item in logical_transitions(candidates):
+        counts = result[item["pe"]]
+        transition = item["transition"]
+        counts[transition] = counts.get(transition, 0) + 1
+    return {pe: dict(sorted(counts.items())) for pe, counts in result.items()}
 
 
 def verify_reference(repo: Path) -> str:
@@ -317,12 +415,12 @@ def run(repo: Path, manifest: dict[str, object]) -> dict[str, object]:
             for candidate in inventory_file(repo, pe, relative):
                 route_status = reachability.get(candidate.enclosing_function, "UNREACHABLE_STATIC")
                 candidates.append(
-                    Candidate(
+                    resolve_candidate_semantics(Candidate(
                         **{
                             **asdict(candidate),
                             "route_status": route_status,
                         }
-                    )
+                    ))
                 )
     by_pe = {
         pe: {
@@ -371,10 +469,12 @@ def run(repo: Path, manifest: dict[str, object]) -> dict[str, object]:
         "blocking_gaps": [
             "Candidate PE manifest is validated but not yet frozen into the preregistration.",
             "Placements and tensor signatures are not yet normalized into all seven template fields.",
+            "Framework-generated FSDP/HSDP and pipeline communications are not yet expanded into templates.",
             "Static candidates have not yet been cross-checked against runtime execution paths.",
         ],
         "pe_summary": by_pe,
         "logical_transition_candidates": logical_transitions(candidates),
+        "transition_inventory_prototype": transition_inventory(candidates),
         "candidates": [asdict(candidate) for candidate in candidates],
     }
 
