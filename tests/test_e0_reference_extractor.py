@@ -161,6 +161,30 @@ def unused():
         inventory = MODULE.transition_inventory(items)
         self.assertEqual(inventory["PE_moe"]["Dispatch"], 1)
 
+    def test_framework_candidates_keep_symbolic_multiplicity(self) -> None:
+        manifest = {
+            "pes": {
+                "PE_dense": {
+                    "overrides": {
+                        "module_fqns_per_model_part": [["a"], ["b"]],
+                    },
+                    "arquitectura": {
+                        "layers": 6,
+                        "dense_layers": 6,
+                        "moe_layers": 0,
+                    },
+                    "grados": {"dp_r": 2},
+                }
+            }
+        }
+        events = MODULE.framework_candidates(manifest)
+        pp = next(item for item in events if item.subsystem == "pipeline")
+        self.assertEqual(pp.multiplicity, "P - 1")
+        self.assertEqual(pp.transition, "SendRecv")
+        self.assertTrue(
+            all(item.status != "COMPLETE_TEMPLATE" for item in events)
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -78,6 +78,12 @@ The prototype transition inventory counts each active `ShardingConfig`
 boundary declaration once and collapses alternate backend implementations of
 the same explicit communication helper into one logical template. These are
 still candidate transitions, not the complete seven-field fingerprints.
+Framework-generated communication is emitted separately with symbolic
+multiplicity. Pipeline uses `P - 1` exactly as required by §1.7/§1.8 Q2.
+FSDP/HSDP events retain their mesh group and payload class but remain marked
+`REQUIRES_SEMANTIC_DECOMPOSITION` or `REQUIRES_RUNTIME_CROSSCHECK`; they are
+not added to E6 until physical units are decomposed into the seven semantic
+template fields.
 
 Typical workflow:
 

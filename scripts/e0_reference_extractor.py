@@ -70,6 +70,19 @@ class Candidate:
     status: str = "UNCLASSIFIED_PROTOTYPE"
 
 
+@dataclass(frozen=True)
+class FrameworkCandidate:
+    pe: str
+    subsystem: str
+    transition: str
+    group: str
+    tensor_class: str
+    structural_scope: str
+    multiplicity: str
+    provenance: tuple[str, ...]
+    status: str
+
+
 def dotted_name(node: ast.AST) -> str:
     if isinstance(node, ast.Name):
         return node.id
@@ -378,6 +391,88 @@ def transition_inventory(candidates: list[Candidate]) -> dict[str, dict[str, int
     return {pe: dict(sorted(counts.items())) for pe, counts in result.items()}
 
 
+def framework_candidates(manifest: dict[str, object]) -> list[FrameworkCandidate]:
+    """Emit symbolic framework events without pretending they are templates."""
+    events: list[FrameworkCandidate] = []
+    for pe, spec in manifest["pes"].items():
+        parts = spec["overrides"]["module_fqns_per_model_part"]
+        if len(parts) > 1:
+            events.append(
+                FrameworkCandidate(
+                    pe=pe,
+                    subsystem="pipeline",
+                    transition="SendRecv",
+                    group="pp",
+                    tensor_class="activation",
+                    structural_scope="pipeline_stage_edge",
+                    multiplicity="P - 1",
+                    provenance=(
+                        "§1.7 multiplicity vocabulary",
+                        "§1.8 Q2 each pp edge once, independent of microbatches",
+                        "candidate manifest module_fqns_per_model_part",
+                    ),
+                    status="SYMBOLIC_FRAMEWORK_CANDIDATE",
+                )
+            )
+
+        architecture = spec["arquitectura"]
+        dense_layers = architecture["dense_layers"]
+        moe_layers = architecture["moe_layers"]
+        fsdp_scopes = [
+            ("decoder_root_input_output", "1"),
+            ("decoder_nonexpert_layer", "L"),
+        ]
+        if moe_layers:
+            fsdp_scopes.append(("routed_expert", "L_moe"))
+        for scope, multiplicity in fsdp_scopes:
+            group = "efsdp" if scope == "routed_expert" else "dp_s"
+            for transition, tensor_class in (
+                ("AllGather", "param"),
+                ("ReduceScatter", "grad"),
+            ):
+                events.append(
+                    FrameworkCandidate(
+                        pe=pe,
+                        subsystem="fsdp",
+                        transition=transition,
+                        group=group,
+                        tensor_class=tensor_class,
+                        structural_scope=scope,
+                        multiplicity=multiplicity,
+                        provenance=(
+                            "torchtitan/distributed/fsdp.py::apply_fsdp_to_decoder",
+                            "§1.4 Partial/Shard/Replicate transition guards",
+                            "§1.6.6 parameter-gradient provenance",
+                        ),
+                        status="REQUIRES_SEMANTIC_DECOMPOSITION",
+                    )
+                )
+        if spec["grados"]["dp_r"] is not None:
+            for scope, multiplicity in (
+                ("decoder_root_input_output", "1"),
+                ("decoder_nonexpert_layer", "L"),
+            ):
+                events.append(
+                    FrameworkCandidate(
+                        pe=pe,
+                        subsystem="hsdp",
+                        transition="AllReduce",
+                        group="dp_r",
+                        tensor_class="grad",
+                        structural_scope=scope,
+                        multiplicity=multiplicity,
+                        provenance=(
+                            "torchtitan/distributed/fsdp.py HSDP dp_replicate mesh",
+                            "§1.4 Partial→Replicate",
+                        ),
+                        status="REQUIRES_RUNTIME_CROSSCHECK",
+                    )
+                )
+        if dense_layers + moe_layers != architecture["layers"]:
+            raise ValueError(f"{pe} architecture scopes do not cover all layers")
+    return events
+
+
 def verify_reference(repo: Path) -> str:
     try:
         actual = subprocess.check_output(
@@ -475,6 +570,9 @@ def run(repo: Path, manifest: dict[str, object]) -> dict[str, object]:
         "pe_summary": by_pe,
         "logical_transition_candidates": logical_transitions(candidates),
         "transition_inventory_prototype": transition_inventory(candidates),
+        "framework_transition_candidates": [
+            asdict(item) for item in framework_candidates(manifest)
+        ],
         "candidates": [asdict(candidate) for candidate in candidates],
     }
 
