@@ -37,6 +37,21 @@ reference code forms the declared communication groups and that real
 collectives run over them, but it does not validate performance, bandwidth,
 or behavior over real interconnects. It does not close E0 either.
 
+An experimental, provenance-first inventory for §8.3 point 3 is available:
+
+```bash
+python scripts/e0_reference_extractor.py \
+  --reference-repo /path/to/torchtitan-at-reference-head \
+  --output /external/path/e0-reference-inventory.json
+```
+
+This prototype statically inventories declarative `ShardingConfig` boundaries
+and explicit communication calls for the dense and MoE reference paths. Its
+output is a review queue, not a complete fingerprint: it deliberately reports
+`e0_closed=false`, `e6_computed=false`, and makes no coverage claim until it is
+cross-checked manually and against runtime traces. It never reads the PR
+population, and rejects output paths inside the Planlock checkout.
+
 Typical workflow:
 
 ```text
