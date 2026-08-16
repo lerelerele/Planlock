@@ -22,6 +22,7 @@ from pathlib import Path
 
 from paths import external_out_root
 
+
 def refuse_overwrite(path: Path) -> None:
     if path.exists():
         print(f"ERROR: {path} already exists; refusing to overwrite.", file=sys.stderr)

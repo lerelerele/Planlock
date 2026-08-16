@@ -46,7 +46,7 @@ def _worker(rank: int, world_size: int, degrees: dict, spmd_backend: str, out_di
     os.environ["MASTER_PORT"] = os.environ["E0_MASTER_PORT"]
 
     sys.path.insert(0, os.environ["TORCHTITAN_REPO"])
-    import torch.testing._internal.distributed.fake_pg  # noqa: F401 -- registers the "fake" c10d backend torchtitan uses for degree-1 axes
+    import torch.testing._internal.distributed.fake_pg  # registers the "fake" c10d backend torchtitan uses for degree-1 axes
     import torchtitan.distributed.parallel_dims as pd
 
     pd.device_type = "cpu"  # torchtitan falls back to the literal string "cuda" when no accelerator is detected

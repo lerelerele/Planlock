@@ -53,7 +53,6 @@ Usage:
 import argparse
 import sys
 from pathlib import Path
-from typing import List, Optional, Tuple
 
 # Add scripts/ to path so schema can be imported when running from any CWD.
 _HERE = Path(__file__).resolve().parent
@@ -61,12 +60,12 @@ if str(_HERE) not in sys.path:
     sys.path.insert(0, str(_HERE))
 
 from schema import (
-    GoldLabel,
     EstadoPE,
+    FingerprintRecord,
+    GoldLabel,
+    JoinedRecord,
     SiNo,
     Veredicto,
-    JoinedRecord,
-    FingerprintRecord,
     join,
 )
 
@@ -76,6 +75,7 @@ from schema import (
 N_Q = 137
 # Shadow-phase size: n = ⌈log(0.05) / log((N_Q−1)/N_Q)⌉ = 409 (§0.2).
 import math as _math
+
 N_SHADOW = _math.ceil(_math.log(0.05) / _math.log((N_Q - 1) / N_Q))
 N_HARD_NEGATIVES = 20
 N_POSITIVES = 10
@@ -84,7 +84,7 @@ N_FIRST_30 = 30
 # ── helpers ────────────────────────────────────────────────────────────────────
 
 
-def _diff_huella(fp: FingerprintRecord) -> Optional[Veredicto]:
+def _diff_huella(fp: FingerprintRecord) -> Veredicto | None:
     """Return the diff verdict for one fingerprint row.
 
     Uses veredicto_delta when present.  For control rows that were escalated
@@ -215,13 +215,13 @@ def _fp_no_alcanzado(rec: JoinedRecord) -> bool:
 # ── main computation ───────────────────────────────────────────────────────────
 
 
-def compute_metrics(records: List[JoinedRecord]) -> dict:
+def compute_metrics(records: list[JoinedRecord]) -> dict:
     """Compute all study metrics; return a structured results dict."""
 
     # ── partition the records ──────────────────────────────────────────────────
-    hard_negatives: List[JoinedRecord] = []   # 20 hard negatives (es_negativo_dificil=sí)
-    positives:      List[JoinedRecord] = []   # 10 CHANGE
-    primeros_30:    List[JoinedRecord] = []   # first 30 of the permutation
+    hard_negatives: list[JoinedRecord] = []   # 20 hard negatives (es_negativo_dificil=sí)
+    positives:      list[JoinedRecord] = []   # 10 CHANGE
+    primeros_30:    list[JoinedRecord] = []   # first 30 of the permutation
 
     for rec in records:
         if rec.gold.es_negativo_dificil == SiNo.SI:
@@ -251,7 +251,7 @@ def compute_metrics(records: List[JoinedRecord]) -> dict:
         )
 
     # Primary set = hard negatives ∪ positives (primario)
-    primario: List[JoinedRecord] = hard_negatives + [
+    primario: list[JoinedRecord] = hard_negatives + [
         r for r in positives if r not in hard_negatives
     ]
 
@@ -395,7 +395,7 @@ def compute_metrics(records: List[JoinedRecord]) -> dict:
 # ── markdown report ────────────────────────────────────────────────────────────
 
 
-def _pct(x: Optional[float]) -> str:
+def _pct(x: float | None) -> str:
     if x is None:
         return "N/A"
     return f"{x * 100:.1f}%"
@@ -407,7 +407,7 @@ def _frac(n: int, d: int) -> str:
 
 def render_report(m: dict) -> str:
     """Render the §11 markdown report from the metrics dict."""
-    lines: List[str] = []
+    lines: list[str] = []
 
     def h(level: int, title: str) -> None:
         lines.append("#" * level + " " + title)
@@ -462,8 +462,8 @@ def render_report(m: dict) -> str:
     # ── §11.6: counts ─────────────────────────────────────────────────────────
     h(2, "§11.6 Recuentos")
 
-    line(f"| Métrica | Valor |")
-    line(f"|---------|-------|")
+    line("| Métrica | Valor |")
+    line("|---------|-------|")
     line(f"| FP_PR (negativos difíciles, n={m['n_hard_negatives']}) | "
          f"**{m['fp_pr_count']}** |")
     line(f"| FP_GATE (total) | {m['fp_gate_count']} |")
@@ -572,7 +572,7 @@ def render_report(m: dict) -> str:
 # ── CLI ────────────────────────────────────────────────────────────────────────
 
 
-def _main(argv: List[str]) -> int:
+def _main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(
         description="Compute and report metrics from joined records (§2.3, §6–§8).",
     )

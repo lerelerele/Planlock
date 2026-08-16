@@ -12,14 +12,13 @@ import argparse
 import json
 import subprocess
 import sys
+from collections.abc import Sequence
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Dict, FrozenSet, List, Optional, Sequence, Set, Tuple
-
 
 REFERENCE_SHA = "9a711521ac2973fe230a3f38efc6aedfc7d1f9c6"
 
-ROLES: FrozenSet[str] = frozenset(
+ROLES: frozenset[str] = frozenset(
     {
         "ColLinear", "RowLinear", "TPReplicatedLinear", "Attention", "Norm",
         "Embedding", "LMHead", "Router", "GroupedGEMM", "Dispatch", "Combine",
@@ -27,7 +26,7 @@ ROLES: FrozenSet[str] = frozenset(
     }
 )
 
-AXES: FrozenSet[str] = frozenset(
+AXES: frozenset[str] = frozenset(
     {
         "batch", "seq", "token", "query_pos", "key_pos", "model",
         "input_feature", "output_feature", "head", "kv_head", "head_dim",
@@ -48,17 +47,17 @@ class Finding:
     fixture: str
     status: str
     decision: str
-    identities_used: Tuple[str, ...]
+    identities_used: tuple[str, ...]
     axis_opaque: int
-    roles_used: Tuple[str, ...]
-    provenance: Tuple[str, ...]
-    notes: Tuple[str, ...]
+    roles_used: tuple[str, ...]
+    provenance: tuple[str, ...]
+    notes: tuple[str, ...]
 
 
-def validate_form(form: Sequence[Axis]) -> List[str]:
+def validate_form(form: Sequence[Axis]) -> list[str]:
     """Apply §1.6.3's no-duplicate-known-axis rule."""
-    errors: List[str] = []
-    seen: Set[str] = set()
+    errors: list[str] = []
+    seen: set[str] = set()
     for axis in form:
         if axis.identity not in AXES:
             errors.append(f"unknown axis identity: {axis.identity}")
@@ -162,7 +161,7 @@ def verify_reference(repo: Path) -> str:
     return actual
 
 
-def run(repo: Path) -> Dict[str, object]:
+def run(repo: Path) -> dict[str, object]:
     actual = verify_reference(repo)
     findings = [qkv_gqa(), moe_routed_item(), embedding_lmhead()]
     return {
@@ -177,7 +176,7 @@ def run(repo: Path) -> Dict[str, object]:
     }
 
 
-def render_markdown(report: Dict[str, object]) -> str:
+def render_markdown(report: dict[str, object]) -> str:
     lines = [
         "# E0 synthetic structural calibration",
         "",
@@ -210,7 +209,7 @@ def render_markdown(report: Dict[str, object]) -> str:
     return "\n".join(lines)
 
 
-def main(argv: Optional[List[str]] = None) -> int:
+def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--reference-repo", type=Path, required=True)
     parser.add_argument("--json", action="store_true", help="emit JSON instead of Markdown")

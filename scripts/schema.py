@@ -26,7 +26,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from enum import Enum
 from pathlib import Path
-from typing import Dict, List, Optional, Set, Tuple
+from typing import Optional
 
 # ── Enumerations ──────────────────────────────────────────────────────────────
 
@@ -173,16 +173,16 @@ class FingerprintRecord:
     huella_C1:                      str
     huella_C2:                      str
     delta_cierre:                   str
-    veredicto_delta:                Optional[Veredicto]
+    veredicto_delta:                Veredicto | None
     # --- from-scratch path (controls and scaled runs) ---
     huella_completa_lado_1:         str
     huella_completa_lado_2:         str
     delta_completo:                 str
-    veredicto_desde_cero:           Optional[Veredicto]
+    veredicto_desde_cero:           Veredicto | None
     sello_desde_cero:               str                  # ISO 8601 timestamp or empty
     # --- control-only comparison ---
-    discrepancia_veredicto:         Optional[SiNo]
-    discrepancia_estructural:       Optional[SiNo]
+    discrepancia_veredicto:         SiNo | None
+    discrepancia_estructural:       SiNo | None
     # --- counters ---
     roles_opaque_cierre:            str
     plantillas_totales_cierre:      str
@@ -191,12 +191,12 @@ class FingerprintRecord:
     axis_opaque_cierre:             str
     ejes_totales_cierre:            str
     # --- completion fields ---
-    spec_suficiente_lado_1:         Optional[SiNo]
-    spec_suficiente_lado_2:         Optional[SiNo]
+    spec_suficiente_lado_1:         SiNo | None
+    spec_suficiente_lado_2:         SiNo | None
     regla_no_cubierta:              str
     tiempo_de_aplicacion:           str                  # minutes, free text
 
-    def validate(self, file_mtime: Optional[datetime] = None) -> None:
+    def validate(self, file_mtime: datetime | None = None) -> None:
         """Raise ValueError for any constraint violation.
 
         Parameters
@@ -264,7 +264,7 @@ def _is_frozen(path: Path) -> bool:
     return bool(lines) and lines[-1] == _FROZEN_MARKER
 
 
-def _read_csv_lines(path: Path) -> List[str]:
+def _read_csv_lines(path: Path) -> list[str]:
     """Read the file, stripping the '# FROZEN' sentinel if it is the last non-empty line."""
     with path.open(encoding="utf-8") as fh:
         lines = list(fh)
@@ -297,7 +297,7 @@ def _optional_enum(cls, value: str, field_name: str, par_id: str = "") -> Option
     return _parse_enum(cls, value, field_name, par_id)
 
 
-def _require_columns(reader: csv.DictReader, required: Set[str], filename: str) -> None:
+def _require_columns(reader: csv.DictReader, required: set[str], filename: str) -> None:
     """Reject truncated CSV schemas before row parsing can hide omissions."""
     actual = set(reader.fieldnames or [])
     missing = sorted(required - actual)
@@ -308,14 +308,14 @@ def _require_columns(reader: csv.DictReader, required: Set[str], filename: str) 
 # ── File loaders ──────────────────────────────────────────────────────────────
 
 
-def load_gold_labels(path: Path) -> List[GoldLabelRecord]:
+def load_gold_labels(path: Path) -> list[GoldLabelRecord]:
     """Parse and validate gold_labels.csv independently.
 
     All rows are validated; all errors are collected and reported together.
     Raises ValueError if any error is found.
     """
-    errors: List[str] = []
-    records: List[GoldLabelRecord] = []
+    errors: list[str] = []
+    records: list[GoldLabelRecord] = []
 
     lines = _read_csv_lines(path)
     reader = csv.DictReader(lines)
@@ -362,14 +362,14 @@ def load_gold_labels(path: Path) -> List[GoldLabelRecord]:
     return records
 
 
-def load_fingerprints(path: Path) -> List[FingerprintRecord]:
+def load_fingerprints(path: Path) -> list[FingerprintRecord]:
     """Parse and validate fingerprints.csv independently.
 
     All rows are validated; all errors are collected and reported together.
     Raises ValueError if any error is found.
     """
-    errors: List[str] = []
-    records: List[FingerprintRecord] = []
+    errors: list[str] = []
+    records: list[FingerprintRecord] = []
 
     file_mtime = datetime.fromtimestamp(path.stat().st_mtime, tz=timezone.utc)
     lines = _read_csv_lines(path)
@@ -380,7 +380,7 @@ def load_fingerprints(path: Path) -> List[FingerprintRecord]:
         "fingerprints.csv",
     )
 
-    seen: Set[Tuple[str, PE]] = set()
+    seen: set[tuple[str, PE]] = set()
 
     for row in reader:
         pid = row.get("par_id_opaco", "")
@@ -446,13 +446,13 @@ class JoinedRecord:
     """One par_id after joining the two files."""
 
     gold:         GoldLabelRecord
-    fingerprints: List[FingerprintRecord]
+    fingerprints: list[FingerprintRecord]
 
 
 def join(
     gold_labels_path: Path,
     fingerprints_path: Path,
-) -> List[JoinedRecord]:
+) -> list[JoinedRecord]:
     """Merge gold_labels.csv and fingerprints.csv on par_id_opaco.
 
     Refuses to run unless both files are marked frozen (last non-empty line
@@ -476,7 +476,7 @@ def join(
     golds = load_gold_labels(gold_labels_path)
     fps   = load_fingerprints(fingerprints_path)
 
-    fp_by_par: Dict[str, List[FingerprintRecord]] = {}
+    fp_by_par: dict[str, list[FingerprintRecord]] = {}
     for fp in fps:
         fp_by_par.setdefault(fp.par_id_opaco, []).append(fp)
 
@@ -510,7 +510,7 @@ def join(
 # ── CLI entry point ───────────────────────────────────────────────────────────
 
 
-def _main(argv: List[str]) -> int:
+def _main(argv: list[str]) -> int:
     """Validate one or both CSV files from the command line.
 
     Usage:
