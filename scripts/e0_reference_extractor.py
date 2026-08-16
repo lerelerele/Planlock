@@ -15,6 +15,8 @@ import sys
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
+from e0_manifest import validate as validate_manifest
+
 REFERENCE_SHA = "9a711521ac2973fe230a3f38efc6aedfc7d1f9c6"
 
 PE_FILES = {
@@ -35,23 +37,13 @@ PE_FILES = {
     ),
 }
 
-# These routes are the current prototype hypothesis, not a frozen PE manifest.
-# The preregistration defines the manifest fields but does not yet assign their
-# definitive values (§1.0).  Consequently this script must not claim coverage.
-ROUTE_HYPOTHESES = {
-    "PE_dense": {
-        "model_family": "llama3",
-        "config_registry_module": "torchtitan.models.llama3.config_registry",
-        "function_config": None,
-        "overrides": None,
-        "manifest_hash": None,
-    },
+ROUTE_ROOTS = {
+    "PE_dense": {"set_llama3_sharding_config"},
     "PE_moe": {
-        "model_family": "deepseek_v3",
-        "config_registry_module": "torchtitan.models.deepseek_v3.config_registry",
-        "function_config": None,
-        "overrides": None,
-        "manifest_hash": None,
+        "set_deepseek_v3_sharding_config",
+        "_token_count_exchange",
+        "_dispatch_token_exchange",
+        "_combine_token_exchange",
     },
 }
 
@@ -74,6 +66,7 @@ class Candidate:
     role: str | None = None
     transition: str | None = None
     classification_basis: str | None = None
+    route_status: str = "NOT_EVALUATED"
     status: str = "UNCLASSIFIED_PROTOTYPE"
 
 
@@ -138,6 +131,94 @@ class InventoryVisitor(ast.NodeVisitor):
                 )
             )
         self.generic_visit(node)
+
+
+class CallGraphVisitor(ast.NodeVisitor):
+    """Collect direct function calls and whether their edge is conditional."""
+
+    def __init__(self) -> None:
+        self.function: str | None = None
+        self.conditional_depth = 0
+        self.edges: dict[str, list[tuple[str, bool]]] = {}
+
+    def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
+        previous = self.function
+        self.function = node.name
+        self.edges.setdefault(node.name, [])
+        for statement in node.body:
+            self.visit(statement)
+        self.function = previous
+
+    visit_AsyncFunctionDef = visit_FunctionDef
+
+    def visit_If(self, node: ast.If) -> None:
+        self.visit(node.test)
+        self.conditional_depth += 1
+        for statement in (*node.body, *node.orelse):
+            self.visit(statement)
+        self.conditional_depth -= 1
+
+    def visit_Call(self, node: ast.Call) -> None:
+        if self.function:
+            leaf = dotted_name(node.func).rsplit(".", 1)[-1]
+            self.edges[self.function].append((leaf, self.conditional_depth > 0))
+        self.generic_visit(node)
+
+
+def route_reachability(repo: Path, files: tuple[str, ...], roots: set[str]) -> dict[str, str]:
+    graph: dict[str, list[tuple[str, bool]]] = {}
+    for relative in files:
+        tree = ast.parse((repo / relative).read_text(encoding="utf-8"), filename=relative)
+        visitor = CallGraphVisitor()
+        visitor.visit(tree)
+        for function, edges in visitor.edges.items():
+            graph.setdefault(function, []).extend(edges)
+
+    status = {root: "ACTIVE_STATIC" for root in roots}
+    queue = list(roots)
+    while queue:
+        caller = queue.pop(0)
+        caller_status = status[caller]
+        for callee, conditional_edge in graph.get(caller, []):
+            if callee not in graph:
+                continue
+            proposed = (
+                "CONDITIONAL_RUNTIME"
+                if conditional_edge or caller_status == "CONDITIONAL_RUNTIME"
+                else "ACTIVE_STATIC"
+            )
+            current = status.get(callee)
+            if current == "ACTIVE_STATIC" or current == proposed:
+                continue
+            status[callee] = proposed
+            queue.append(callee)
+    return status
+
+
+def resolve_manifest_conditions(
+    pe: str, status: dict[str, str], manifest_pe: dict[str, object]
+) -> dict[str, str]:
+    """Resolve reviewed config branches using frozen candidate architecture facts."""
+    resolved = dict(status)
+    architecture = manifest_pe["arquitectura"]
+    if pe == "PE_moe":
+        if architecture["mtp_layers"] == 0:
+            resolved["_set_deepseek_v3_mtp_sharding"] = "UNREACHABLE_MANIFEST"
+        if architecture["dense_layers"] > 0:
+            for function in ("set_dense_ffn_sharding",):
+                resolved[function] = "ACTIVE_MANIFEST"
+        if architecture["moe_layers"] > 0:
+            for function in (
+                "set_moe_sharding_config",
+                "_router_sharding_config",
+                "_shared_expert_colwise_config",
+                "_shared_expert_rowwise_config",
+                "_shared_experts_sharding_configs",
+                "_routed_experts_sharding_configs",
+                "_moe_sharding_config",
+            ):
+                resolved[function] = "ACTIVE_MANIFEST"
+    return resolved
 
 
 def classify_candidate(
@@ -223,20 +304,49 @@ def inventory_file(repo: Path, pe: str, relative: str) -> list[Candidate]:
     return visitor.candidates
 
 
-def run(repo: Path) -> dict[str, object]:
+def run(repo: Path, manifest: dict[str, object]) -> dict[str, object]:
     actual = verify_reference(repo)
-    candidates = [
-        candidate
-        for pe, files in PE_FILES.items()
-        for relative in files
-        for candidate in inventory_file(repo, pe, relative)
-    ]
+    manifest_report = validate_manifest(repo, manifest)
+    candidates = []
+    for pe, files in PE_FILES.items():
+        reachability = route_reachability(repo, files, ROUTE_ROOTS[pe])
+        reachability = resolve_manifest_conditions(
+            pe, reachability, manifest["pes"][pe]
+        )
+        for relative in files:
+            for candidate in inventory_file(repo, pe, relative):
+                route_status = reachability.get(candidate.enclosing_function, "UNREACHABLE_STATIC")
+                candidates.append(
+                    Candidate(
+                        **{
+                            **asdict(candidate),
+                            "route_status": route_status,
+                        }
+                    )
+                )
     by_pe = {
         pe: {
             "files_scanned": len(files),
             "candidate_count": sum(item.pe == pe for item in candidates),
             "rule_classified_count": sum(
                 item.pe == pe and item.status == "RULE_CLASSIFIED_PROTOTYPE"
+                for item in candidates
+            ),
+            "active_static_count": sum(
+                item.pe == pe
+                and item.route_status in {"ACTIVE_STATIC", "ACTIVE_MANIFEST"}
+                for item in candidates
+            ),
+            "conditional_runtime_count": sum(
+                item.pe == pe and item.route_status == "CONDITIONAL_RUNTIME"
+                for item in candidates
+            ),
+            "unreachable_static_count": sum(
+                item.pe == pe
+                and item.route_status in {
+                    "UNREACHABLE_STATIC",
+                    "UNREACHABLE_MANIFEST",
+                }
                 for item in candidates
             ),
         }
@@ -248,10 +358,18 @@ def run(repo: Path) -> dict[str, object]:
         "e6_computed": False,
         "population_touched": False,
         "reference_sha": actual,
+        "manifest_sha256": manifest_report["manifest_sha256"],
         "coverage_claim": "NONE_UNTIL_MANUAL_AND_RUNTIME_CROSSCHECK",
-        "route_hypotheses": ROUTE_HYPOTHESES,
+        "manifest_status": manifest["status"],
+        "manifest_routes": {
+            pe: {
+                "modulo_registro": spec["modulo_registro"],
+                "funcion_config": spec["funcion_config"],
+            }
+            for pe, spec in manifest["pes"].items()
+        },
         "blocking_gaps": [
-            "Definitive PE manifest does not yet fix function_config, overrides, or manifest_hash.",
+            "Candidate PE manifest is validated but not yet frozen into the preregistration.",
             "Placements and tensor signatures are not yet normalized into all seven template fields.",
             "Static candidates have not yet been cross-checked against runtime execution paths.",
         ],
@@ -275,12 +393,16 @@ def external_output(path: Path) -> Path:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--reference-repo", type=Path, required=True)
+    parser.add_argument(
+        "--manifest", type=Path, default=Path("e0-manifest-candidate.json")
+    )
     parser.add_argument("--output", type=Path)
     args = parser.parse_args(argv)
     try:
-        report = run(args.reference_repo.resolve())
+        manifest = json.loads(args.manifest.read_text(encoding="utf-8"))
+        report = run(args.reference_repo.resolve(), manifest)
         output = external_output(args.output) if args.output else None
-    except (SyntaxError, UnicodeError, ValueError) as exc:
+    except (OSError, json.JSONDecodeError, SyntaxError, UnicodeError, ValueError) as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 1
     rendered = json.dumps(report, indent=2, ensure_ascii=False) + "\n"

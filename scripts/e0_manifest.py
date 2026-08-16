@@ -54,6 +54,13 @@ def validate(repo: Path, manifest: dict[str, object]) -> dict[str, object]:
         if pe["funcion_config"] not in function_names(module_path):
             raise ValueError(f"missing function_config for {pe_name}: {pe['funcion_config']}")
         overrides = pe["overrides"]
+        architecture = pe["arquitectura"]
+        if architecture["layers"] != 6:
+            raise ValueError(f"{pe_name} candidate must use the six-layer debugmodel")
+        if architecture["dense_layers"] + architecture["moe_layers"] != 6:
+            raise ValueError(f"{pe_name} dense/MoE layer counts do not cover the model")
+        if architecture["mtp_layers"] != 0:
+            raise ValueError(f"{pe_name} candidate unexpectedly enables MTP")
         world_size = (
             overrides["data_parallel_replicate_degree"]
             * overrides["data_parallel_shard_degree"]
@@ -101,6 +108,7 @@ def validate(repo: Path, manifest: dict[str, object]) -> dict[str, object]:
             "pipeline_parts": len(parts),
             "partition_complete": True,
             "degrees_consistent": True,
+            "architecture_consistent": True,
         }
     return {
         "status": "VALID_CANDIDATE_NOT_FROZEN",

@@ -42,6 +42,7 @@ An experimental, provenance-first inventory for §8.3 point 3 is available:
 ```bash
 python scripts/e0_reference_extractor.py \
   --reference-repo /path/to/torchtitan-at-reference-head \
+  --manifest e0-manifest-candidate.json \
   --output /external/path/e0-reference-inventory.json
 ```
 
@@ -68,6 +69,11 @@ every parallel degree and pipeline module partition explicitly, checks the
 registry functions against the pinned HEAD, and emits a canonical SHA-256.
 Its status remains `CANDIDATE_NOT_FROZEN` until the complete fingerprints and
 runtime cross-check demonstrate that both proposed PEs are valid.
+The extractor validates that manifest first, records its canonical hash, then
+builds a static call graph from each model's sharding entrypoint. Candidates
+are labelled `ACTIVE_STATIC`, `ACTIVE_MANIFEST`, `CONDITIONAL_RUNTIME`,
+`UNREACHABLE_STATIC`, or `UNREACHABLE_MANIFEST`; unreachable candidates remain
+in the audit output but cannot contribute to a future E6 calculation.
 
 Typical workflow:
 

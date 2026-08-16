@@ -1,10 +1,12 @@
 import ast
 import importlib.util
+import sys
 import tempfile
 import unittest
 from pathlib import Path
 
 SCRIPT = Path(__file__).parents[1] / "scripts" / "e0_reference_extractor.py"
+sys.path.insert(0, str(SCRIPT.parent))
 SPEC = importlib.util.spec_from_file_location("e0_reference_extractor", SCRIPT)
 assert SPEC and SPEC.loader
 MODULE = importlib.util.module_from_spec(SPEC)
@@ -66,11 +68,52 @@ def _combine_token_exchange():
         target = Path(tempfile.gettempdir()) / "planlock-report.json"
         self.assertEqual(MODULE.external_output(target), target.resolve())
 
-    def test_route_hypotheses_do_not_pose_as_frozen_manifests(self) -> None:
-        for route in MODULE.ROUTE_HYPOTHESES.values():
-            self.assertIsNone(route["function_config"])
-            self.assertIsNone(route["overrides"])
-            self.assertIsNone(route["manifest_hash"])
+    def test_reachability_propagates_conditional_edges(self) -> None:
+        source = """\
+def root(flag):
+    direct()
+    if flag:
+        optional()
+def direct():
+    leaf()
+def leaf():
+    pass
+def optional():
+    pass
+def unused():
+    pass
+"""
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "route.py"
+            path.write_text(source, encoding="utf-8")
+            status = MODULE.route_reachability(Path(directory), ("route.py",), {"root"})
+        self.assertEqual(status["direct"], "ACTIVE_STATIC")
+        self.assertEqual(status["leaf"], "ACTIVE_STATIC")
+        self.assertEqual(status["optional"], "CONDITIONAL_RUNTIME")
+        self.assertNotIn("unused", status)
+
+    def test_manifest_resolves_deepseek_layer_branches(self) -> None:
+        status = {
+            "_set_deepseek_v3_mtp_sharding": "CONDITIONAL_RUNTIME",
+            "set_dense_ffn_sharding": "CONDITIONAL_RUNTIME",
+            "_moe_sharding_config": "CONDITIONAL_RUNTIME",
+        }
+        manifest_pe = {
+            "arquitectura": {
+                "layers": 6,
+                "dense_layers": 1,
+                "moe_layers": 5,
+                "mtp_layers": 0,
+            }
+        }
+        resolved = MODULE.resolve_manifest_conditions("PE_moe", status, manifest_pe)
+        self.assertEqual(
+            resolved["_set_deepseek_v3_mtp_sharding"], "UNREACHABLE_MANIFEST"
+        )
+        self.assertEqual(resolved["set_dense_ffn_sharding"], "ACTIVE_MANIFEST")
+        self.assertEqual(resolved["_moe_sharding_config"], "ACTIVE_MANIFEST")
 
 
 if __name__ == "__main__":
