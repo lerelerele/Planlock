@@ -206,6 +206,18 @@ def unused():
         with self.assertRaisesRegex(ValueError, "all_reduce_observed"):
             MODULE.validate_hsdp_trace(invalid)
 
+    def test_dense_storage_catalog_preserves_w1_w3_coefficient(self) -> None:
+        manifest = {
+            "pes": {"PE_dense": {"dtype_classes": {"param": "f16"}}}
+        }
+        catalog = MODULE.dense_storage_catalog(manifest)
+        swiglu_inputs = next(
+            item for item in catalog if "{w1,w3}" in item.logical_parameter
+        )
+        self.assertEqual(swiglu_inputs.multiplicity, "2*L")
+        self.assertEqual(swiglu_inputs.role, "ColLinear")
+        self.assertEqual(swiglu_inputs.dtype_class, "f16")
+
 
 if __name__ == "__main__":
     unittest.main()

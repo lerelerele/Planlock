@@ -101,6 +101,14 @@ evidence for all-gather, reduce-scatter, and all-reduce before upgrading the
 HSDP candidates to `CONFIRMED_CPU_GLOO_MECHANICS`. This confirms the mechanism,
 not the complete reference-model fingerprint or GPU/NCCL behavior.
 
+The extractor also emits `dense_storage_semantics`, a logical-parameter
+catalog for the Llama3 debugmodel. It separates parameters before FSDP
+flattening, assigns their §1.3 roles, §1.6.4.A forms, TP storage placements,
+and symbolic multiplicities. Parameter and reduction dtype classes are frozen
+explicitly in the candidate manifest. During this decomposition E0 added
+`2·L` to §1.7 because SwiGLU `w1` and `w3` collapse to the same structural
+template in every layer.
+
 Typical workflow:
 
 ```text

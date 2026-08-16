@@ -6,6 +6,7 @@
       "modulo_registro": "torchtitan.models.llama3.config_registry",
       "funcion_config": "llama3_debugmodel",
       "arquitectura": {"layers": 6, "dense_layers": 6, "moe_layers": 0, "mtp_layers": 0},
+      "dtype_classes": {"param": "f16", "grad_reduce": "f32"},
       "overrides": {
         "data_parallel_replicate_degree": 2,
         "data_parallel_shard_degree": 2,
@@ -34,6 +35,7 @@
       "modulo_registro": "torchtitan.models.deepseek_v3.config_registry",
       "funcion_config": "deepseek_v3_debugmodel",
       "arquitectura": {"layers": 6, "dense_layers": 1, "moe_layers": 5, "mtp_layers": 0, "shared_experts": 2},
+      "dtype_classes": {"param": "f16", "grad_reduce": "f32"},
       "overrides": {
         "data_parallel_replicate_degree": 1,
         "data_parallel_shard_degree": 2,

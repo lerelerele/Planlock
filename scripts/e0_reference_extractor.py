@@ -83,6 +83,19 @@ class FrameworkCandidate:
     status: str
 
 
+@dataclass(frozen=True)
+class StorageSemantic:
+    pe: str
+    logical_parameter: str
+    role: str
+    normalized_form: tuple[tuple[str, str], ...]
+    tp_placement: str
+    multiplicity: str
+    dtype_class: str
+    provenance: tuple[str, ...]
+    status: str
+
+
 def dotted_name(node: ast.AST) -> str:
     if isinstance(node, ast.Name):
         return node.id
@@ -502,6 +515,64 @@ def framework_candidates(
     return events
 
 
+def dense_storage_catalog(manifest: dict[str, object]) -> list[StorageSemantic]:
+    """Catalog the unambiguous Llama3 debugmodel logical parameter families."""
+    dtype_class = manifest["pes"]["PE_dense"]["dtype_classes"]["param"]
+    common = {"pe": "PE_dense", "dtype_class": dtype_class}
+    entries = [
+        ("tok_embeddings.weight", "Embedding", (("vocab", "V"), ("output_feature", "D")), "tp:Shard(vocab)", "1"),
+        ("norm.weight", "Norm", (("model", "D"),), "tp:Replicate", "1"),
+        ("lm_head.weight", "LMHead", (("vocab", "V"), ("input_feature", "D")), "tp:Shard(vocab)", "1"),
+        ("layers.*.attention_norm.weight", "Norm", (("model", "D"),), "tp:Replicate", "L"),
+        ("layers.*.ffn_norm.weight", "Norm", (("model", "D"),), "tp:Replicate", "L"),
+        (
+            "layers.*.attention.qkv_linear.wqkv.weight",
+            "ColLinear",
+            (("output_feature", "(H+2*Hkv)*Dh"), ("input_feature", "D")),
+            "tp:Shard(output_feature)",
+            "L",
+        ),
+        (
+            "layers.*.attention.wo.weight",
+            "RowLinear",
+            (("output_feature", "D"), ("input_feature", "D")),
+            "tp:Shard(input_feature)",
+            "L",
+        ),
+        (
+            "layers.*.feed_forward.{w1,w3}.weight",
+            "ColLinear",
+            (("output_feature", "F"), ("input_feature", "D")),
+            "tp:Shard(output_feature)",
+            "2*L",
+        ),
+        (
+            "layers.*.feed_forward.w2.weight",
+            "RowLinear",
+            (("output_feature", "D"), ("input_feature", "F")),
+            "tp:Shard(input_feature)",
+            "L",
+        ),
+    ]
+    return [
+        StorageSemantic(
+            **common,
+            logical_parameter=name,
+            role=role,
+            normalized_form=form,
+            tp_placement=placement,
+            multiplicity=multiplicity,
+            provenance=(
+                "torchtitan/models/llama3/__init__.py::_debugmodel",
+                "torchtitan/models/common/decoder_sharding.py",
+                "preregistration §1.3 and §1.6.4.A",
+            ),
+            status="SEMANTIC_STORAGE_CATALOGED",
+        )
+        for name, role, form, placement, multiplicity in entries
+    ]
+
+
 def verify_reference(repo: Path) -> str:
     try:
         actual = subprocess.check_output(
@@ -605,6 +676,9 @@ def run(
         "transition_inventory_prototype": transition_inventory(candidates),
         "framework_transition_candidates": [
             asdict(item) for item in framework_candidates(manifest, hsdp_trace)
+        ],
+        "dense_storage_semantics": [
+            asdict(item) for item in dense_storage_catalog(manifest)
         ],
         "hsdp_runtime_crosscheck": (
             "CONFIRMED_CPU_GLOO_MECHANICS"

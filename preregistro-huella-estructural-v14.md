@@ -554,7 +554,12 @@ condición de payload ya la expresa `transicion != NONE`.
 ### 1.7 Multiplicidad
 
 Colapso por índice estructural repetido, con multiplicidad simbólica: `L`,
-`L_moe`, `L - L_moe`, `P - 1`, `1`.
+`2·L`, `L_moe`, `L - L_moe`, `P - 1`, `1`.
+
+`2·L` se añadió durante E0 al descomponer el `FeedForward` SwiGLU del PE dense:
+`w1` y `w3` tienen la misma plantilla estructural en cada capa (ambos son
+`ColLinear` de `D` a `F`) y el mapa de huella debe sumar sus ocurrencias, no
+mantener dos claves idénticas con multiplicidad `L`.
 
 Un cambio en el **valor** de un símbolo no es cambio de plan. Un cambio en la
 **expresión** sí lo es.

@@ -55,6 +55,10 @@ def validate(repo: Path, manifest: dict[str, object]) -> dict[str, object]:
             raise ValueError(f"missing function_config for {pe_name}: {pe['funcion_config']}")
         overrides = pe["overrides"]
         architecture = pe["arquitectura"]
+        if pe.get("dtype_classes") != {"param": "f16", "grad_reduce": "f32"}:
+            raise ValueError(
+                f"{pe_name} must explicitly freeze bfloat16 params and float32 reductions"
+            )
         if architecture["layers"] != 6:
             raise ValueError(f"{pe_name} candidate must use the six-layer debugmodel")
         if architecture["dense_layers"] + architecture["moe_layers"] != 6:
