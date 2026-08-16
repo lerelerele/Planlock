@@ -7,6 +7,16 @@ All generated study data must live outside the Git checkout. The `--out-root`
 argument is mandatory and rejects paths inside the checkout; this is stronger
 than relying on `.gitignore`.
 
+The local structural calibration harness can be run without PyTorch:
+
+```text
+python scripts/e0_calibration.py --reference-repo <torchtitan-checkout>
+```
+
+Its output is explicitly `SYNTHETIC_STRUCTURAL_ONLY`; it does not close E0,
+derive fingerprints from the PR population, or replace the real multi-GPU
+validation.
+
 Typical workflow:
 
 ```text
