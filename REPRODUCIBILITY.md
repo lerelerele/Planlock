@@ -56,6 +56,19 @@ not yet freeze each PE's `function_config`, `overrides`, or `hash_manifiesto`,
 so the prototype reports that omission as a blocking gap rather than claiming
 complete coverage or calculating E6.
 
+The concrete proposal is stored in `e0-manifest-candidate.json` and can be
+validated without importing TorchTitan:
+
+```text
+python scripts/e0_manifest.py --reference-repo <torchtitan-checkout>
+```
+
+It uses the six-layer `llama3_debugmodel` and `deepseek_v3_debugmodel`, fixes
+every parallel degree and pipeline module partition explicitly, checks the
+registry functions against the pinned HEAD, and emits a canonical SHA-256.
+Its status remains `CANDIDATE_NOT_FROZEN` until the complete fingerprints and
+runtime cross-check demonstrate that both proposed PEs are valid.
+
 Typical workflow:
 
 ```text

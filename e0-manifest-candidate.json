@@ -1,0 +1,58 @@
+{
+  "status": "CANDIDATE_NOT_FROZEN",
+  "reference_sha": "9a711521ac2973fe230a3f38efc6aedfc7d1f9c6",
+  "pes": {
+    "PE_dense": {
+      "modulo_registro": "torchtitan.models.llama3.config_registry",
+      "funcion_config": "llama3_debugmodel",
+      "overrides": {
+        "data_parallel_replicate_degree": 2,
+        "data_parallel_shard_degree": 2,
+        "context_parallel_degree": 2,
+        "tensor_parallel_degree": 2,
+        "pipeline_parallel_degree": 2,
+        "expert_parallel_degree": 1,
+        "enable_sequence_parallel": true,
+        "spmd_backend": "default",
+        "pipeline_parallel_schedule": "Interleaved1F1B",
+        "module_fqns_per_model_part": [
+          ["tok_embeddings", "layers.0"],
+          ["layers.1", "layers.2"],
+          ["layers.3", "layers.4"],
+          ["layers.5", "norm", "lm_head"]
+        ]
+      },
+      "grados": {"dp_r": 2, "dp_s": 2, "cp": 2, "tp": 2, "ep": null, "efsdp": null, "pp": 2},
+      "malla_densa": ["dp_r", "dp_s", "cp", "tp"],
+      "malla_dispersa": null,
+      "particion_pp": "module_fqns_per_model_part",
+      "backend": "default",
+      "frontera": "training_step_forward_backward_optimizer"
+    },
+    "PE_moe": {
+      "modulo_registro": "torchtitan.models.deepseek_v3.config_registry",
+      "funcion_config": "deepseek_v3_debugmodel",
+      "overrides": {
+        "data_parallel_replicate_degree": 1,
+        "data_parallel_shard_degree": 2,
+        "context_parallel_degree": 1,
+        "tensor_parallel_degree": 2,
+        "pipeline_parallel_degree": 2,
+        "expert_parallel_degree": 2,
+        "enable_sequence_parallel": true,
+        "spmd_backend": "default",
+        "pipeline_parallel_schedule": "1F1B",
+        "module_fqns_per_model_part": [
+          ["tok_embeddings", "layers.0", "layers.1", "layers.2"],
+          ["layers.3", "layers.4", "layers.5", "norm", "lm_head"]
+        ]
+      },
+      "grados": {"dp_r": null, "dp_s": 2, "cp": null, "tp": 2, "ep": 2, "efsdp": 2, "pp": 2},
+      "malla_densa": ["dp_s", "tp"],
+      "malla_dispersa": ["efsdp", "ep"],
+      "particion_pp": "module_fqns_per_model_part",
+      "backend": "default",
+      "frontera": "training_step_forward_backward_optimizer"
+    }
+  }
+}
