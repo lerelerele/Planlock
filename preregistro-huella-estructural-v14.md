@@ -952,6 +952,36 @@ cobertura_posible    = 1 − FUERA_DE_PE / 30
    **Atención al eje `cp` de `PE_dense`:** su cobertura depende de cómo esté
    implementado el paralelismo de contexto, y es el caso que motiva la guarda
    ancha de `SendRecv` en §1.4.
+
+   **Evidencia parcial (calibración, no cierre de E0):**
+   `scripts/e0_mesh_validation.py` lanza el `world_size` real declarado (32
+   para `PE_dense`, 8 para `PE_moe`) como procesos CPU locales con backend
+   `gloo`, importa sin modificar `torchtitan.distributed.parallel_dims` del
+   HEAD de referencia, llama a su `build_mesh()` real y ejecuta un
+   `all_reduce` real sobre cada malla unidimensional resultante. **Esto NO es
+   NCCL/GPU real** — confirma que el código de referencia forma los grupos de
+   comunicación declarados y que las colectivas corren, no valida
+   rendimiento, ancho de banda ni comportamiento sobre interconexión física
+   real.
+
+   Resultado en el HEAD `9a711521ac2973fe230a3f38efc6aedfc7d1f9c6`:
+
+   - `PE_moe` (world size 8): ejes activos con colectiva confirmada — `pp`(2),
+     `batch`(2), `loss`(2), `tp`(2), `ep`(2), `efsdp`(2), `fsdp`(2). Coincide
+     exactamente con `dp_s`, `tp`, `ep`, `efsdp`, `pp` de la tabla de grados
+     (§1.0); `cp` y `dp_r` están en `⊥` y correctamente ausentes.
+   - `PE_dense` (world size 32): ejes activos con colectiva confirmada —
+     `pp`(2), `batch`(4), `loss`(8), `dp_replicate`(2), `cp`(2), `tp`(2),
+     `fsdp`(4). Coincide con `dp_r`, `cp`, `tp`, `pp` de la tabla; `ep` está en
+     `⊥` y correctamente ausente.
+
+   **Resuelve la atención al eje `cp`:** bajo `spmd_backend="default"`, `cp`
+   **sí** forma su propia malla unidimensional con grupo de comunicación real
+   (`dataloading_mesh["cp"]`), independiente de que además participe,
+   fusionado con `dp_shard`, en la malla `fsdp` usada para el sharding de
+   parámetros. `cp` **está cubierto** como eje propio en `PE_dense`, con
+   independencia del backend SPMD elegido — no depende de una decisión de
+   implementación que pudiera dejarlo sin grupo propio.
 3. **Se derivan las huellas de referencia COMPLETAS de ambos PEs** y se
    calculan allí los cuatro sub-umbrales de E6. Los casos especiales de abajo
    **no las sustituyen**.

@@ -17,6 +17,26 @@ Its output is explicitly `SYNTHETIC_STRUCTURAL_ONLY`; it does not close E0,
 derive fingerprints from the PR population, or replace the real multi-GPU
 validation.
 
+A second calibration script checks real group formation (§8.3, point 2)
+without a GPU, using torch's CPU `gloo` backend:
+
+```text
+python scripts/e0_mesh_validation.py \
+    --pe-name PE_moe --dp-replicate 1 --dp-shard 2 --cp 1 --tp 2 --pp 2 --ep 2 \
+    --world-size 8 --torchtitan-repo <torchtitan-checkout> --out-root <external-output>
+
+python scripts/e0_mesh_validation.py \
+    --pe-name PE_dense --dp-replicate 2 --dp-shard 2 --cp 2 --tp 2 --pp 2 --ep 1 \
+    --world-size 32 --torchtitan-repo <torchtitan-checkout> --out-root <external-output>
+```
+
+It requires an external Python environment with CPU-only `torch` and
+`spmd_types==0.2.3` installed (not vendored by this repository). Its output
+is explicitly labelled `gloo (CPU) -- NOT NCCL/GPU`: it confirms the
+reference code forms the declared communication groups and that real
+collectives run over them, but it does not validate performance, bandwidth,
+or behavior over real interconnects. It does not close E0 either.
+
 Typical workflow:
 
 ```text
