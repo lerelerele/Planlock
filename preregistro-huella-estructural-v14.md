@@ -982,6 +982,16 @@ cobertura_posible    = 1 − FUERA_DE_PE / 30
    parámetros. `cp` **está cubierto** como eje propio en `PE_dense`, con
    independencia del backend SPMD elegido — no depende de una decisión de
    implementación que pudiera dejarlo sin grupo propio.
+
+   **Comprobación mecánica HSDP adicional (calibración, no cierre):**
+   `scripts/e0_hsdp_trace.py` ejecuta FSDP2 real sobre cuatro procesos CPU/Gloo
+   en una malla `dp_replicate=2 × fsdp=2`, con forward, backward y paso de
+   optimizador. El profiler confirmó en **los cuatro ranks** `all_gather`,
+   `reduce_scatter` y `all_reduce` (`c10d::_allgather_base_`,
+   `c10d::_reduce_scatter_base_`, `c10d::allreduce_`). Esto confirma que el
+   candidato HSDP de `PE_dense` necesita una transición `AllReduce` sobre
+   `dp_r`, además de las transiciones FSDP sobre `dp_s`. No determina todavía
+   roles, firmas tensoriales ni multiplicidades completas, y no es NCCL/GPU.
 3. **Se derivan las huellas de referencia COMPLETAS de ambos PEs** y se
    calculan allí los cuatro sub-umbrales de E6. Los casos especiales de abajo
    **no las sustituyen**.

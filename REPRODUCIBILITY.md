@@ -85,6 +85,22 @@ FSDP/HSDP events retain their mesh group and payload class but remain marked
 not added to E6 until physical units are decomposed into the seven semantic
 template fields.
 
+HSDP mechanics can be cross-checked with a real four-process CPU/Gloo trace:
+
+```text
+python scripts/e0_hsdp_trace.py --output <new-external-directory>
+python scripts/e0_reference_extractor.py \
+  --reference-repo <torchtitan-checkout> \
+  --manifest e0-manifest-candidate.json \
+  --hsdp-trace <external-directory>/report.json \
+  --output <external-inventory.json>
+```
+
+The trace runs FSDP2 on a `dp_replicate=2 × fsdp=2` mesh and requires profiler
+evidence for all-gather, reduce-scatter, and all-reduce before upgrading the
+HSDP candidates to `CONFIRMED_CPU_GLOO_MECHANICS`. This confirms the mechanism,
+not the complete reference-model fingerprint or GPU/NCCL behavior.
+
 Typical workflow:
 
 ```text

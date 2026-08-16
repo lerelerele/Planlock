@@ -185,6 +185,27 @@ def unused():
             all(item.status != "COMPLETE_TEMPLATE" for item in events)
         )
 
+    def test_valid_hsdp_trace_confirms_mechanics_only(self) -> None:
+        trace = {
+            "status": "REAL_CPU_GLOO_HSDP_MECHANICS_ONLY",
+            "backend": "gloo",
+            "device": "cpu",
+            "world_size": 4,
+            "mesh": {"dp_replicate": 2, "fsdp": 2},
+            "all_reduce_observed": True,
+            "all_gather_observed": True,
+            "reduce_scatter_observed": True,
+            "all_ranks_observed_all_reduce": True,
+            "all_ranks_observed_all_gather": True,
+            "all_ranks_observed_reduce_scatter": True,
+            "e0_closed": False,
+            "population_touched": False,
+        }
+        MODULE.validate_hsdp_trace(trace)
+        invalid = dict(trace, all_reduce_observed=False)
+        with self.assertRaisesRegex(ValueError, "all_reduce_observed"):
+            MODULE.validate_hsdp_trace(invalid)
+
 
 if __name__ == "__main__":
     unittest.main()

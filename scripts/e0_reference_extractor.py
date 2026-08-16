@@ -391,8 +391,33 @@ def transition_inventory(candidates: list[Candidate]) -> dict[str, dict[str, int
     return {pe: dict(sorted(counts.items())) for pe, counts in result.items()}
 
 
-def framework_candidates(manifest: dict[str, object]) -> list[FrameworkCandidate]:
+def validate_hsdp_trace(trace: dict[str, object]) -> None:
+    required = {
+        "status": "REAL_CPU_GLOO_HSDP_MECHANICS_ONLY",
+        "backend": "gloo",
+        "device": "cpu",
+        "world_size": 4,
+        "mesh": {"dp_replicate": 2, "fsdp": 2},
+        "all_reduce_observed": True,
+        "all_gather_observed": True,
+        "reduce_scatter_observed": True,
+        "all_ranks_observed_all_reduce": True,
+        "all_ranks_observed_all_gather": True,
+        "all_ranks_observed_reduce_scatter": True,
+        "e0_closed": False,
+        "population_touched": False,
+    }
+    for field, expected in required.items():
+        if trace.get(field) != expected:
+            raise ValueError(f"invalid HSDP trace field {field}: {trace.get(field)!r}")
+
+
+def framework_candidates(
+    manifest: dict[str, object], hsdp_trace: dict[str, object] | None = None
+) -> list[FrameworkCandidate]:
     """Emit symbolic framework events without pretending they are templates."""
+    if hsdp_trace is not None:
+        validate_hsdp_trace(hsdp_trace)
     events: list[FrameworkCandidate] = []
     for pe, spec in manifest["pes"].items():
         parts = spec["overrides"]["module_fqns_per_model_part"]
@@ -465,7 +490,11 @@ def framework_candidates(manifest: dict[str, object]) -> list[FrameworkCandidate
                             "torchtitan/distributed/fsdp.py HSDP dp_replicate mesh",
                             "§1.4 Partial→Replicate",
                         ),
-                        status="REQUIRES_RUNTIME_CROSSCHECK",
+                        status=(
+                            "CONFIRMED_CPU_GLOO_MECHANICS"
+                            if hsdp_trace is not None
+                            else "REQUIRES_RUNTIME_CROSSCHECK"
+                        ),
                     )
                 )
         if dense_layers + moe_layers != architecture["layers"]:
@@ -497,7 +526,11 @@ def inventory_file(repo: Path, pe: str, relative: str) -> list[Candidate]:
     return visitor.candidates
 
 
-def run(repo: Path, manifest: dict[str, object]) -> dict[str, object]:
+def run(
+    repo: Path,
+    manifest: dict[str, object],
+    hsdp_trace: dict[str, object] | None = None,
+) -> dict[str, object]:
     actual = verify_reference(repo)
     manifest_report = validate_manifest(repo, manifest)
     candidates = []
@@ -571,8 +604,13 @@ def run(repo: Path, manifest: dict[str, object]) -> dict[str, object]:
         "logical_transition_candidates": logical_transitions(candidates),
         "transition_inventory_prototype": transition_inventory(candidates),
         "framework_transition_candidates": [
-            asdict(item) for item in framework_candidates(manifest)
+            asdict(item) for item in framework_candidates(manifest, hsdp_trace)
         ],
+        "hsdp_runtime_crosscheck": (
+            "CONFIRMED_CPU_GLOO_MECHANICS"
+            if hsdp_trace is not None
+            else "NOT_PROVIDED"
+        ),
         "candidates": [asdict(candidate) for candidate in candidates],
     }
 
@@ -594,11 +632,17 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--manifest", type=Path, default=Path("e0-manifest-candidate.json")
     )
+    parser.add_argument("--hsdp-trace", type=Path)
     parser.add_argument("--output", type=Path)
     args = parser.parse_args(argv)
     try:
         manifest = json.loads(args.manifest.read_text(encoding="utf-8"))
-        report = run(args.reference_repo.resolve(), manifest)
+        hsdp_trace = (
+            json.loads(args.hsdp_trace.read_text(encoding="utf-8"))
+            if args.hsdp_trace
+            else None
+        )
+        report = run(args.reference_repo.resolve(), manifest, hsdp_trace)
         output = external_output(args.output) if args.output else None
     except (OSError, json.JSONDecodeError, SyntaxError, UnicodeError, ValueError) as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
