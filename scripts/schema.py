@@ -26,7 +26,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from enum import Enum
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Set, Tuple
 
 # ── Enumerations ──────────────────────────────────────────────────────────────
 
@@ -297,6 +297,14 @@ def _optional_enum(cls, value: str, field_name: str, par_id: str = "") -> Option
     return _parse_enum(cls, value, field_name, par_id)
 
 
+def _require_columns(reader: csv.DictReader, required: Set[str], filename: str) -> None:
+    """Reject truncated CSV schemas before row parsing can hide omissions."""
+    actual = set(reader.fieldnames or [])
+    missing = sorted(required - actual)
+    if missing:
+        raise ValueError(f"{filename}: missing required column(s): {', '.join(missing)}")
+
+
 # ── File loaders ──────────────────────────────────────────────────────────────
 
 
@@ -311,6 +319,15 @@ def load_gold_labels(path: Path) -> List[GoldLabelRecord]:
 
     lines = _read_csv_lines(path)
     reader = csv.DictReader(lines)
+    _require_columns(
+        reader,
+        {
+            "par_id_opaco", "estado_PE_dense", "estado_PE_moe", "gold_label",
+            "en_primario", "en_primeros_30", "es_negativo_dificil",
+            "criterio_dificultad", "pe_que_lo_hace_dificil",
+        },
+        "gold_labels.csv",
+    )
 
     for row in reader:
         pid = row.get("par_id_opaco", "")
@@ -329,6 +346,10 @@ def load_gold_labels(path: Path) -> List[GoldLabelRecord]:
                 justificacion_breve    = row.get("justificacion_breve", ""),
             )
             rec.validate()
+            if not rec.par_id_opaco:
+                raise ValueError("par_id_opaco must not be empty")
+            if any(existing.par_id_opaco == rec.par_id_opaco for existing in records):
+                raise ValueError(f"duplicate par_id_opaco={rec.par_id_opaco!r}")
             records.append(rec)
         except (KeyError, ValueError) as exc:
             errors.append(str(exc))
@@ -353,6 +374,13 @@ def load_fingerprints(path: Path) -> List[FingerprintRecord]:
     file_mtime = datetime.fromtimestamp(path.stat().st_mtime, tz=timezone.utc)
     lines = _read_csv_lines(path)
     reader = csv.DictReader(lines)
+    _require_columns(
+        reader,
+        {"par_id_opaco", "pe", "es_control", "sello_desde_cero"},
+        "fingerprints.csv",
+    )
+
+    seen: Set[Tuple[str, PE]] = set()
 
     for row in reader:
         pid = row.get("par_id_opaco", "")
@@ -389,6 +417,15 @@ def load_fingerprints(path: Path) -> List[FingerprintRecord]:
                 tiempo_de_aplicacion           = row.get("tiempo_de_aplicacion", ""),
             )
             rec.validate(file_mtime=file_mtime)
+            if not rec.par_id_opaco:
+                raise ValueError("par_id_opaco must not be empty")
+            key = (rec.par_id_opaco, rec.pe)
+            if key in seen:
+                raise ValueError(
+                    f"duplicate fingerprint for par_id={rec.par_id_opaco!r} "
+                    f"pe={rec.pe.value!r}"
+                )
+            seen.add(key)
             records.append(rec)
         except (KeyError, ValueError) as exc:
             errors.append(str(exc))
@@ -442,6 +479,27 @@ def join(
     fp_by_par: Dict[str, List[FingerprintRecord]] = {}
     for fp in fps:
         fp_by_par.setdefault(fp.par_id_opaco, []).append(fp)
+
+    gold_ids = {g.par_id_opaco for g in golds}
+    fp_ids = set(fp_by_par)
+    unknown_fp_ids = sorted(fp_ids - gold_ids)
+    missing_fp_ids = sorted(gold_ids - fp_ids)
+    incomplete = sorted(
+        pid for pid, rows in fp_by_par.items()
+        if pid in gold_ids and {row.pe for row in rows} != {PE.PE_DENSE, PE.PE_MOE}
+    )
+    errors = []
+    if unknown_fp_ids:
+        errors.append(f"fingerprints.csv contains unknown par_id(s): {unknown_fp_ids}")
+    if missing_fp_ids:
+        errors.append(f"fingerprints.csv is missing par_id(s): {missing_fp_ids}")
+    if incomplete:
+        errors.append(
+            "each par_id must have exactly one PE_dense and one PE_moe fingerprint; "
+            f"incomplete par_id(s): {incomplete}"
+        )
+    if errors:
+        raise ValueError("join integrity error(s):\n" + "\n".join(f"  • {e}" for e in errors))
 
     return [
         JoinedRecord(gold=g, fingerprints=fp_by_par.get(g.par_id_opaco, []))

@@ -9,7 +9,7 @@ assigns opaque par_ids, and writes:
   out/sealed/side_map.json      — per-pair randomized side order
 
 Usage:
-    python scripts/sample.py
+    python scripts/sample.py --out-root <external-output>
 """
 
 import json
@@ -18,14 +18,9 @@ import sys
 from hashlib import sha256
 from pathlib import Path
 
+from paths import external_out_root
+
 SEED = 20260815
-POPULATION_PATH = Path("out/population.json")
-PERMUTATION_PATH = Path("out/permutation.json")
-SEALED_DIR = Path("out/sealed")
-PARID_TO_SHA_PATH = SEALED_DIR / "parid_to_sha.json"
-SIDE_MAP_PATH = SEALED_DIR / "side_map.json"
-
-
 def refuse_overwrite(path: Path) -> None:
     if path.exists():
         print(f"ERROR: {path} already exists; refusing to overwrite.", file=sys.stderr)
@@ -37,16 +32,35 @@ def make_par_id(sha: str) -> str:
 
 
 def main() -> None:
+    import argparse
+
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--out-root",
+        required=True,
+        help="External output directory; must be outside the Git checkout",
+    )
+    args = parser.parse_args()
+    try:
+        out_root = external_out_root(args.out_root)
+    except ValueError as exc:
+        parser.error(str(exc))
+    permutation_path = out_root / "permutation.json"
+    sealed_dir = out_root / "sealed"
+    parid_to_sha_path = sealed_dir / "parid_to_sha.json"
+    side_map_path = sealed_dir / "side_map.json"
+    population_path = out_root / "population.json"
+
     # Guard: refuse to overwrite any output file
-    for p in (PERMUTATION_PATH, PARID_TO_SHA_PATH, SIDE_MAP_PATH):
+    for p in (permutation_path, parid_to_sha_path, side_map_path):
         refuse_overwrite(p)
 
     # Load population
-    if not POPULATION_PATH.exists():
-        print(f"ERROR: {POPULATION_PATH} not found.", file=sys.stderr)
+    if not population_path.exists():
+        print(f"ERROR: {population_path} not found.", file=sys.stderr)
         sys.exit(1)
 
-    data = json.loads(POPULATION_PATH.read_text(encoding="utf-8"))
+    data = json.loads(population_path.read_text(encoding="utf-8"))
     qualifying = data["qualifying"]
 
     # 1. Sort chronologically ascending
@@ -78,36 +92,36 @@ def main() -> None:
         side_map[pid] = sides
 
     # Create output dirs
-    SEALED_DIR.mkdir(parents=True, exist_ok=True)
-    PERMUTATION_PATH.parent.mkdir(parents=True, exist_ok=True)
+    sealed_dir.mkdir(parents=True, exist_ok=True)
+    permutation_path.parent.mkdir(parents=True, exist_ok=True)
 
     # 5a. Write out/permutation.json (no SHAs)
     permutation = {
         "seed": SEED,
         "par_ids": [pid for pid, _ in par_ids],
     }
-    PERMUTATION_PATH.write_text(
+    permutation_path.write_text(
         json.dumps(permutation, indent=2, sort_keys=True, ensure_ascii=True) + "\n",
         encoding="utf-8",
     )
 
     # 5b. Write out/sealed/parid_to_sha.json
     parid_to_sha = {pid: sha for pid, sha in par_ids}
-    PARID_TO_SHA_PATH.write_text(
+    parid_to_sha_path.write_text(
         json.dumps(parid_to_sha, indent=2, sort_keys=True, ensure_ascii=True) + "\n",
         encoding="utf-8",
     )
 
     # 5c. Write out/sealed/side_map.json
-    SIDE_MAP_PATH.write_text(
+    side_map_path.write_text(
         json.dumps(side_map, indent=2, sort_keys=True, ensure_ascii=True) + "\n",
         encoding="utf-8",
     )
 
     print(f"Sampled {len(par_ids)} entries.")
-    print(f"Written: {PERMUTATION_PATH}")
-    print(f"Written: {PARID_TO_SHA_PATH}")
-    print(f"Written: {SIDE_MAP_PATH}")
+    print(f"Written: {permutation_path}")
+    print(f"Written: {parid_to_sha_path}")
+    print(f"Written: {side_map_path}")
 
 
 if __name__ == "__main__":

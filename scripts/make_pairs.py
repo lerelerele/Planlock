@@ -19,7 +19,7 @@ The blind reviewer cannot infer the direction from the tree layout alone
 (no commit messages, PR numbers, dates, or diff annotations are written).
 
 Usage:
-    python scripts/make_pairs.py --repo <path_to_torchtitan>
+    python scripts/make_pairs.py --repo <path_to_torchtitan> --out-root <external-output>
 """
 
 import argparse
@@ -28,12 +28,9 @@ import subprocess
 import sys
 from pathlib import Path
 
-# ── Paths ────────────────────────────────────────────────────────────────────
+from paths import external_out_root
 
-PERMUTATION_PATH   = Path("out/permutation.json")
-PARID_TO_SHA_PATH  = Path("out/sealed/parid_to_sha.json")
-SIDE_MAP_PATH      = Path("out/sealed/side_map.json")
-PAIRS_DIR          = Path("out/pairs")
+# ── Paths ────────────────────────────────────────────────────────────────────
 
 # ── §4.1 selector rules (literal, IMMUTABLE) ─────────────────────────────────
 # Copied verbatim from population.py so that make_pairs.py is self-contained.
@@ -166,23 +163,36 @@ def main() -> None:
         required=True,
         help="Path to pytorch/torchtitan checkout",
     )
+    parser.add_argument(
+        "--out-root",
+        required=True,
+        help="External output directory; must be outside the Git checkout",
+    )
     args = parser.parse_args()
     repo = args.repo
+    try:
+        out_root = external_out_root(args.out_root)
+    except ValueError as exc:
+        parser.error(str(exc))
+    permutation_path = out_root / "permutation.json"
+    parid_to_sha_path = out_root / "sealed/parid_to_sha.json"
+    side_map_path = out_root / "sealed/side_map.json"
+    pairs_dir = out_root / "pairs"
 
     # Guard: refuse to overwrite the pairs directory
-    if PAIRS_DIR.exists():
-        print(f"ERROR: {PAIRS_DIR} already exists; refusing to overwrite.", file=sys.stderr)
+    if pairs_dir.exists():
+        print(f"ERROR: {pairs_dir} already exists; refusing to overwrite.", file=sys.stderr)
         sys.exit(1)
 
     # Load inputs
-    for p in (PERMUTATION_PATH, PARID_TO_SHA_PATH, SIDE_MAP_PATH):
+    for p in (permutation_path, parid_to_sha_path, side_map_path):
         if not p.exists():
             print(f"ERROR: {p} not found.", file=sys.stderr)
             sys.exit(1)
 
-    permutation  = json.loads(PERMUTATION_PATH.read_text(encoding="utf-8"))
-    parid_to_sha = json.loads(PARID_TO_SHA_PATH.read_text(encoding="utf-8"))
-    side_map     = json.loads(SIDE_MAP_PATH.read_text(encoding="utf-8"))
+    permutation  = json.loads(permutation_path.read_text(encoding="utf-8"))
+    parid_to_sha = json.loads(parid_to_sha_path.read_text(encoding="utf-8"))
+    side_map     = json.loads(side_map_path.read_text(encoding="utf-8"))
 
     par_ids: list[str] = permutation["par_ids"]
 
@@ -191,16 +201,16 @@ def main() -> None:
     missing_side = [p for p in par_ids if p not in side_map]
     if missing_sha or missing_side:
         if missing_sha:
-            print(f"ERROR: {len(missing_sha)} par_id(s) missing from {PARID_TO_SHA_PATH}:", file=sys.stderr)
+            print(f"ERROR: {len(missing_sha)} par_id(s) missing from {parid_to_sha_path}:", file=sys.stderr)
             for p in missing_sha:
                 print(f"  {p}", file=sys.stderr)
         if missing_side:
-            print(f"ERROR: {len(missing_side)} par_id(s) missing from {SIDE_MAP_PATH}:", file=sys.stderr)
+            print(f"ERROR: {len(missing_side)} par_id(s) missing from {side_map_path}:", file=sys.stderr)
             for p in missing_side:
                 print(f"  {p}", file=sys.stderr)
         sys.exit(1)
 
-    PAIRS_DIR.mkdir(parents=True, exist_ok=True)
+    pairs_dir.mkdir(parents=True, exist_ok=True)
 
     total_pairs = len(par_ids)
     for i, par_id in enumerate(par_ids, 1):
@@ -210,7 +220,7 @@ def main() -> None:
 
         parent_sha = get_parent_sha(repo, sha)
 
-        pair_dir = PAIRS_DIR / par_id
+        pair_dir = pairs_dir / par_id
 
         before_dir = pair_dir / side_before
         after_dir  = pair_dir / side_after
@@ -220,7 +230,7 @@ def main() -> None:
 
         print(f"[{i}/{total_pairs}] {par_id}  {side_before}={n_before} files  {side_after}={n_after} files")
 
-    print(f"\nDone. {total_pairs} pairs written to {PAIRS_DIR}/")
+    print(f"\nDone. {total_pairs} pairs written to {pairs_dir}/")
 
 
 if __name__ == "__main__":

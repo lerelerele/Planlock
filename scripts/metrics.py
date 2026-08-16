@@ -77,6 +77,9 @@ N_Q = 137
 # Shadow-phase size: n = ⌈log(0.05) / log((N_Q−1)/N_Q)⌉ = 409 (§0.2).
 import math as _math
 N_SHADOW = _math.ceil(_math.log(0.05) / _math.log((N_Q - 1) / N_Q))
+N_HARD_NEGATIVES = 20
+N_POSITIVES = 10
+N_FIRST_30 = 30
 
 # ── helpers ────────────────────────────────────────────────────────────────────
 
@@ -227,6 +230,25 @@ def compute_metrics(records: List[JoinedRecord]) -> dict:
             positives.append(rec)
         if rec.gold.en_primeros_30 == SiNo.SI:
             primeros_30.append(rec)
+
+    population_errors = []
+    if len(hard_negatives) != N_HARD_NEGATIVES:
+        population_errors.append(
+            f"expected {N_HARD_NEGATIVES} hard negatives, got {len(hard_negatives)}"
+        )
+    if len(positives) != N_POSITIVES:
+        population_errors.append(
+            f"expected {N_POSITIVES} positives, got {len(positives)}"
+        )
+    if len(primeros_30) != N_FIRST_30:
+        population_errors.append(
+            f"expected {N_FIRST_30} records in primeros_30, got {len(primeros_30)}"
+        )
+    if population_errors:
+        raise ValueError(
+            "study population integrity error(s):\n"
+            + "\n".join(f"  • {e}" for e in population_errors)
+        )
 
     # Primary set = hard negatives ∪ positives (primario)
     primario: List[JoinedRecord] = hard_negatives + [

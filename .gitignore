@@ -1,0 +1,4 @@
+# Study outputs. The sealed maps contain the deblinding information.
+out/
+*.py[cod]
+__pycache__/

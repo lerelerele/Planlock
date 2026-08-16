@@ -1,0 +1,10 @@
+cff-version: 1.2.0
+title: Planlock
+message: "If you use Planlock, please cite this repository."
+type: software
+repository-code: "https://github.com/lerelerele/Planlock"
+url: "https://github.com/lerelerele/Planlock"
+license: Apache-2.0
+version: 0.0.0-study
+authors:
+  - name: lerelerele

@@ -7,8 +7,8 @@ identifies qualifying commits (those touching §4.1 selector paths), excludes
 docs/tests/CI/logging/dependency-only commits, and writes out/population.json.
 
 Usage:
-    python scripts/population.py --repo <path_to_torchtitan>
-    python scripts/population.py --repo <path_to_torchtitan> --verify
+    python scripts/population.py --repo <path_to_torchtitan> --out-root <external-output>
+    python scripts/population.py --repo <path_to_torchtitan> --out-root <external-output> --verify
 """
 
 import argparse
@@ -20,6 +20,8 @@ import sys
 import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
+
+from paths import external_out_root
 
 # ── Constants ───────────────────────────────────────────────────────────────
 
@@ -311,8 +313,13 @@ def main():
     )
     parser.add_argument(
         "--out",
-        default="out/population.json",
-        help="Output path (default: out/population.json)",
+        default=None,
+        help="Output path (must be outside the Git checkout; defaults to <out-root>/population.json)",
+    )
+    parser.add_argument(
+        "--out-root",
+        required=True,
+        help="External output directory; must be outside the Git checkout",
     )
     parser.add_argument(
         "--verify",
@@ -321,7 +328,15 @@ def main():
     )
     args = parser.parse_args()
 
-    out_path = Path(args.out)
+    try:
+        out_root = external_out_root(args.out_root)
+    except ValueError as exc:
+        parser.error(str(exc))
+    out_path = Path(args.out).expanduser().resolve() if args.out else out_root / "population.json"
+    try:
+        out_path.relative_to(out_root)
+    except ValueError:
+        parser.error(f"--out must be inside --out-root ({out_root})")
 
     if args.verify:
         if not out_path.exists():

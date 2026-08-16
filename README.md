@@ -4,7 +4,11 @@
 
 ---
 
-> **Status: not implemented.** `planlock` is gated on a preregistered falsification study that tests whether its core abstraction — a structural fingerprint of the communication plan — survives ordinary refactors of a real codebase. If the fingerprint is unstable, the project is abandoned rather than repaired. Nothing below has shipped. See [Status and validation](#status-and-validation).
+> **Status: not implemented.** `planlock` is gated on a preregistered falsification study that tests whether its core abstraction — a structural fingerprint of the communication plan — survives ordinary refactors of a real codebase. If the fingerprint is unstable, the project is abandoned rather than repaired. Nothing below has shipped. See [Status and validation](#status-and-validation) and the [preregistration](preregistro-huella-estructural-v14.md).
+
+`scripts/` contains instrumentation for the falsification study, not the
+`planlock` tool itself. Its sealed outputs must be generated outside this Git
+checkout; see the `--out-root` option on the study scripts.
 
 ---
 
@@ -245,6 +249,13 @@ Two limits are known in advance and are not negotiable:
 - A manual study cannot establish the service level objective. Bounding the false-alarm rate at the level a merge gate requires needs several hundred consecutive clean qualifying pull requests. That measurement exists only in shadow mode, over a quarter or more, under a frozen version of the checker.
 - **No gate is proposed before that shadow period completes.** The first deliverable is an opt-in test, not a blocking check.
 
+The checked-in preregistration is currently a draft. There is no signed
+`prereg-v14` tag yet; that tag and the final hash must be created only after
+E0 closes. See [reproducibility](REPRODUCIBILITY.md) for the sealed-study
+workflow.
+
 ## License
 
-TBD
+Code and study instrumentation are licensed under the [Apache License 2.0](LICENSE).
+The preregistration is part of the repository record; its active version must
+be treated as the one identified by the signed release tag once E0 is closed.
