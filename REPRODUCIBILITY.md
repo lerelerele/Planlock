@@ -51,6 +51,10 @@ output is a review queue, not a complete fingerprint: it deliberately reports
 `e0_closed=false`, `e6_computed=false`, and makes no coverage claim until it is
 cross-checked manually and against runtime traces. It never reads the PR
 population, and rejects output paths inside the Planlock checkout.
+The current Llama3/DeepSeek V3 routes are explicitly hypotheses: §1.0 does
+not yet freeze each PE's `function_config`, `overrides`, or `hash_manifiesto`,
+so the prototype reports that omission as a blocking gap rather than claiming
+complete coverage or calculating E6.
 
 Typical workflow:
 
