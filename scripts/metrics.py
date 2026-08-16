@@ -70,6 +70,14 @@ from schema import (
     join,
 )
 
+# ── Study constants (preregistered, §3) ───────────────────────────────────────
+
+# N_q: qualifying PRs in the sampling window (preregistered value).
+N_Q = 137
+# Shadow-phase size: n = ⌈log(0.05) / log((N_Q−1)/N_Q)⌉ = 409 (§0.2).
+import math as _math
+N_SHADOW = _math.ceil(_math.log(0.05) / _math.log((N_Q - 1) / N_Q))
+
 # ── helpers ────────────────────────────────────────────────────────────────────
 
 
@@ -154,13 +162,10 @@ def _no_derivable_count(rec: JoinedRecord) -> int:
 
 # ── E6 guard ───────────────────────────────────────────────────────────────────
 
-_CIERRE_FIELDS = (
-    "cierre_C1",
-    "cierre_C2",
-    "huella_C1",
-    "huella_C2",
-    "delta_cierre",
-    "veredicto_delta",
+# Counter fields that must NOT be used for E6 computations (§8.1, §10.2).
+# veredicto_delta is a legitimate verdict field for diff_huella; it is NOT in
+# this list.  Only the cierre *counter* fields are prohibited for E6.
+_E6_FORBIDDEN_CIERRE_COUNTERS = (
     "roles_opaque_cierre",
     "plantillas_totales_cierre",
     "plantillas_con_opaque_cierre",
@@ -171,24 +176,14 @@ _CIERRE_FIELDS = (
 
 
 def _assert_e6_not_from_cierre(fp: FingerprintRecord) -> None:
-    """Raise ValueError if any *_cierre field is populated.
+    """Raise ValueError if any *_cierre counter field is populated.
 
     E6 must be computed ONLY from the two reference fingerprints
-    (huella_completa_lado_1/2, delta_completo) — never from *_cierre fields.
-    This function is called whenever an E6 counter update is requested for a
-    fingerprint row to enforce that invariant.
+    (huella_completa_lado_1/2, delta_completo) — never from *_cierre counter
+    fields.  This function is called on every fingerprint row to enforce that
+    invariant.
     """
-    # veredicto_delta is allowed to be populated generally, but we must not
-    # use cierre counters for E6.  We guard specifically the counter fields.
-    counter_fields = (
-        "roles_opaque_cierre",
-        "plantillas_totales_cierre",
-        "plantillas_con_opaque_cierre",
-        "plantillas_doble_opaque_cierre",
-        "axis_opaque_cierre",
-        "ejes_totales_cierre",
-    )
-    for field in counter_fields:
+    for field in _E6_FORBIDDEN_CIERRE_COUNTERS:
         val = getattr(fp, field, "")
         if val not in ("", None):
             raise ValueError(
@@ -327,11 +322,12 @@ def compute_metrics(records: List[JoinedRecord]) -> dict:
     )
     delta_invalidado = n_discrepancia_veredicto > 0
 
-    # §11.8: pairs escalated desde-cero
+    # §11.8: pairs escalated desde-cero (escalado_desde_cero starts with "sí" / "si")
+    _ESCALADO_SI = {"sí", "si"}
     escaladas = [
         fp for rec in records for fp in rec.fingerprints
-        if fp.escalado_desde_cero.strip().lower().startswith("sí")
-        or fp.escalado_desde_cero.strip().lower().startswith("si")
+        if fp.escalado_desde_cero.strip()
+        and fp.escalado_desde_cero.strip().lower().split()[0] in _ESCALADO_SI
     ]
 
     return dict(
@@ -403,7 +399,7 @@ def render_report(m: dict) -> str:
     # ── §11.2: N_q, operational rate, NO_DERIVABLE, coverage, shadow sizing ───
     h(2, "§11.2 Métricas de exploración")
 
-    line(f"**N_q** (PRs cualificantes en la ventana): 137  _(valor preregistrado)_")
+    line(f"**N_q** (PRs cualificantes en la ventana): {N_Q}  _(valor preregistrado)_")
     line()
 
     line("**Intervalo de tasa operacional** (sobre `primeros_30`):")
@@ -412,7 +408,7 @@ def render_report(m: dict) -> str:
     else:
         line(f"  mín = {m['op_min']:.4f}  ({_pct(m['op_min'])})")
         line(f"  máx = {m['op_max']:.4f}  ({_pct(m['op_max'])})")
-        line("  _(Orientativo. La medición válida del SLO es la sombra de 409 PRs.)_")
+        line(f"  _(Orientativo. La medición válida del SLO es la sombra de {N_SHADOW} PRs.)_")
     line()
 
     line(f"**NO_DERIVABLE** (total pares PE×lado): {m['no_derivable_total']}")
@@ -438,7 +434,7 @@ def render_report(m: dict) -> str:
             line("  → **Indeterminado:** ampliar la muestra de cobertura.")
     line()
 
-    line("**Dimensionado de sombra** (§0.2): n = ⌈log(0.05)/log(136/137)⌉ = **409 PRs**")
+    line(f"**Dimensionado de sombra** (§0.2): n = ⌈log(0.05)/log({N_Q-1}/{N_Q})⌉ = **{N_SHADOW} PRs**")
     line()
 
     # ── §11.6: counts ─────────────────────────────────────────────────────────
