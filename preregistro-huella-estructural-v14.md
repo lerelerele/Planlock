@@ -385,8 +385,13 @@ identidades_arquitectonicas := mapa parcial finito  símbolo → polinomio
 inverso: que una identidad congelada imponga `D = H·Dh` en una revisión
 histórica donde ya no se cumplía.
 
-**Obligatoria en ambos PEs:** `D → H · Dh`. Las demás se descubren y congelan en
-el dry-run de E0.
+**Validada por PE, nunca universal:** `D → H · Dh` se aplica en `PE_dense`,
+donde el Llama debugmodel fija `D=256`, `H=16`, `Dh=16`. No se aplica en
+`PE_moe`: DeepSeek V3 MLA desacopla el residual (`D=256`) de las dimensiones
+por cabeza Q/K (`128+64`) y V (`128`). El dry-run comprobó además que cambiar a
+Qwen3-MoE no restauraría universalidad (`D=256`, `H=16`, `Dh=128`). Forzar la
+identidad en cualquiera de esos modelos violaría la exigencia de procedencia y
+validez de (4)–(5). Las demás identidades se descubren y congelan en E0.
 
 #### 1.6.3 Eje tensorial
 
@@ -554,12 +559,16 @@ condición de payload ya la expresa `transicion != NONE`.
 ### 1.7 Multiplicidad
 
 Colapso por índice estructural repetido, con multiplicidad simbólica: `L`,
-`2·L`, `L_moe`, `L - L_moe`, `P - 1`, `1`.
+`2·L`, `L_moe`, `2·L_moe`, `L - L_moe`, `P - 1`, `1`.
 
 `2·L` se añadió durante E0 al descomponer el `FeedForward` SwiGLU del PE dense:
 `w1` y `w3` tienen la misma plantilla estructural en cada capa (ambos son
 `ColLinear` de `D` a `F`) y el mapa de huella debe sumar sus ocurrencias, no
 mantener dos claves idénticas con multiplicidad `L`.
+
+La misma razón exige `2·L_moe` para `w1/w3` de los expertos compartidos y
+enrutados: en cada capa MoE ambas matrices tienen la misma plantilla dentro de
+su familia densa o dispersa, respectivamente.
 
 Un cambio en el **valor** de un símbolo no es cambio de plan. Un cambio en la
 **expresión** sí lo es.

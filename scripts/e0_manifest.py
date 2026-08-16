@@ -59,6 +59,28 @@ def validate(repo: Path, manifest: dict[str, object]) -> dict[str, object]:
             raise ValueError(
                 f"{pe_name} must explicitly freeze bfloat16 params and float32 reductions"
             )
+        identities = pe.get("identidades_arquitectonicas")
+        expected_identities = {"D": "H*Dh"} if pe_name == "PE_dense" else {}
+        if identities != expected_identities:
+            raise ValueError(
+                f"{pe_name} architectural identities: expected {expected_identities}, got {identities}"
+            )
+        symbols = pe.get("simbolos", {})
+        if any(not isinstance(value, int) or value <= 0 for value in symbols.values()):
+            raise ValueError(f"{pe_name} symbols must be positive integers")
+        if symbols.get("L") != architecture["layers"]:
+            raise ValueError(f"{pe_name} symbol L does not match architecture layers")
+        if pe_name == "PE_dense" and symbols.get("D") != symbols.get("H") * symbols.get("Dh"):
+            raise ValueError("PE_dense does not validate D=H*Dh")
+        if pe_name == "PE_moe":
+            mla = pe.get("dimensiones_mla", {})
+            if set(mla) != {
+                "qk_nope_head_dim",
+                "qk_rope_head_dim",
+                "v_head_dim",
+                "kv_lora_rank",
+            }:
+                raise ValueError("PE_moe must freeze all reviewed MLA dimensions")
         if architecture["layers"] != 6:
             raise ValueError(f"{pe_name} candidate must use the six-layer debugmodel")
         if architecture["dense_layers"] + architecture["moe_layers"] != 6:

@@ -573,6 +573,65 @@ def dense_storage_catalog(manifest: dict[str, object]) -> list[StorageSemantic]:
     ]
 
 
+def moe_storage_catalog(manifest: dict[str, object]) -> list[StorageSemantic]:
+    """Catalog MoE-specific DeepSeek debugmodel logical parameter families."""
+    dtype_class = manifest["pes"]["PE_moe"]["dtype_classes"]["param"]
+    common = {"pe": "PE_moe", "dtype_class": dtype_class}
+    entries = [
+        (
+            "layers.moe.*.router.gate.weight",
+            "Router",
+            (("expert", "E"), ("input_feature", "D")),
+            "dense:{dp_s:Shard(expert),tp:Replicate}",
+            "L_moe",
+        ),
+        (
+            "layers.moe.*.shared_experts.{w1,w3}.weight",
+            "ColLinear",
+            (("output_feature", "2*F"), ("input_feature", "D")),
+            "dense:{dp_s:Shard(output_feature),tp:Shard(output_feature)}",
+            "2*L_moe",
+        ),
+        (
+            "layers.moe.*.shared_experts.w2.weight",
+            "RowLinear",
+            (("output_feature", "D"), ("input_feature", "2*F")),
+            "dense:{dp_s:Shard(output_feature),tp:Shard(input_feature)}",
+            "L_moe",
+        ),
+        (
+            "layers.moe.*.routed_experts.inner_experts.{w1_EFD,w3_EFD}",
+            "GroupedGEMM",
+            (("expert", "E"), ("output_feature", "F"), ("input_feature", "D")),
+            "sparse:{efsdp:Shard(expert),ep:Shard(expert)}",
+            "2*L_moe",
+        ),
+        (
+            "layers.moe.*.routed_experts.inner_experts.w2_EDF",
+            "GroupedGEMM",
+            (("expert", "E"), ("output_feature", "D"), ("input_feature", "F")),
+            "sparse:{efsdp:Shard(expert),ep:Shard(expert)}",
+            "L_moe",
+        ),
+    ]
+    return [
+        StorageSemantic(
+            **common,
+            logical_parameter=name,
+            role=role,
+            normalized_form=form,
+            tp_placement=placement,
+            multiplicity=multiplicity,
+            provenance=(
+                "torchtitan/models/deepseek_v3/__init__.py::_debugmodel",
+                "torchtitan/models/common/moe.py::GroupedExperts",
+                "torchtitan/models/common/moe_sharding.py",
+                "preregistration §1.3 and §1.6.4.A",
+            ),
+            status="SEMANTIC_STORAGE_CATALOGED",
+        )
+        for name, role, form, placement, multiplicity in entries
+    ]
 def verify_reference(repo: Path) -> str:
     try:
         actual = subprocess.check_output(
@@ -679,6 +738,9 @@ def run(
         ],
         "dense_storage_semantics": [
             asdict(item) for item in dense_storage_catalog(manifest)
+        ],
+        "moe_storage_semantics": [
+            asdict(item) for item in moe_storage_catalog(manifest)
         ],
         "hsdp_runtime_crosscheck": (
             "CONFIRMED_CPU_GLOO_MECHANICS"

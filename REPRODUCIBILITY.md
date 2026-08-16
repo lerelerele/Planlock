@@ -108,6 +108,10 @@ and symbolic multiplicities. Parameter and reduction dtype classes are frozen
 explicitly in the candidate manifest. During this decomposition E0 added
 `2·L` to §1.7 because SwiGLU `w1` and `w3` collapse to the same structural
 template in every layer.
+`moe_storage_semantics` applies the same logical decomposition to the router,
+shared experts, and routed grouped-GEMM parameters. Dense and sparse mesh
+families remain distinct, and identical `w1/w3` expert templates use the
+calibrated multiplicity `2·L_moe`.
 
 Typical workflow:
 

@@ -218,6 +218,16 @@ def unused():
         self.assertEqual(swiglu_inputs.role, "ColLinear")
         self.assertEqual(swiglu_inputs.dtype_class, "f16")
 
+    def test_moe_storage_catalog_separates_dense_and_sparse_families(self) -> None:
+        manifest = {"pes": {"PE_moe": {"dtype_classes": {"param": "f16"}}}}
+        catalog = MODULE.moe_storage_catalog(manifest)
+        routed = [item for item in catalog if item.role == "GroupedGEMM"]
+        shared = [item for item in catalog if "shared_experts" in item.logical_parameter]
+        self.assertEqual(len(routed), 2)
+        self.assertTrue(all(item.tp_placement.startswith("sparse:") for item in routed))
+        self.assertTrue(all(item.tp_placement.startswith("dense:") for item in shared))
+        self.assertEqual(routed[0].multiplicity, "2*L_moe")
+
 
 if __name__ == "__main__":
     unittest.main()
