@@ -1,8 +1,9 @@
 # Preregistro v14 — Estudio piloto de estabilidad de la huella estructural
 
 **Estado:** BORRADOR. **Listo para ejecutar E0.** La firma y el hash final
-esperan al resultado de E0 — validez real de los PEs y decisión sobre
-`routed_item`.
+esperan al resultado de E0 — validez real de los PEs bajo grupos distribuidos
+reales. La decisión sobre `routed_item` (identidad 19) quedó cerrada en el
+dry-run de calibración sintético: ver §1.6.3, §1.6.4.B y §8.3.5.
 **Repositorio objetivo:** pytorch/torchtitan
 **HEAD de referencia:** `9a711521ac2973fe230a3f38efc6aedfc7d1f9c6`
 **Ventana:** `[2026-05-17T17:00:00Z, 2026-08-15T17:00:00Z)`
@@ -394,15 +395,21 @@ eje_tensorial     := (id_semantico, expr)
 forma_normalizada := multiconjunto de ejes tensoriales
 ```
 
-**Vocabulario cerrado (18 + centinela):**
+**Vocabulario cerrado (19 + centinela):**
 
 ```
 batch, seq, token, query_pos, key_pos,
 model, input_feature, output_feature,
 head, kv_head, head_dim, ffn_hidden, vocab,
 expert, topk, capacity, expert_offset, layer,
+routed_item,
 axis_opaque
 ```
+
+**`routed_item` (identidad 19, añadida en el dry-run de calibración de E0,
+§8.3.5):** una ocurrencia token–experto producida por expansión top-k, antes o
+después de la ordenación por experto. Ver §1.6.4.B para su regla de asignación
+y §8.3.5 para la procedencia en el código real de referencia.
 
 **Buena formación:** ningún `id_semantico` **conocido** se repite dentro de una
 misma forma. **`axis_opaque` SÍ puede repetirse** y conserva su multiplicidad
@@ -469,7 +476,8 @@ produce `HUELLA_NO_DERIVABLE`. El dry-run debe comprobar exactamente eso.
 |---|---|
 | Lote, como eje propio | `batch` |
 | Posición, como eje propio, fuera de scores | `seq` |
-| Lote y posición aplanados en un solo eje | `token` |
+| Lote y posición aplanados en un solo eje, **sin expansión top-k** | `token` |
+| Ocurrencia token–experto tras expansión top-k (dispatch/combine de MoE), como eje propio o aplanado con lote y posición, antes o después de ordenar por experto | `routed_item` |
 | Los dos ejes de posición de un tensor de scores/probabilidades bajo `Attention` | `query_pos` y `key_pos` |
 | Residual stream | `model` |
 | Intermedio de FFN | `ffn_hidden` |
@@ -965,26 +973,42 @@ cobertura_posible    = 1 − FUERA_DE_PE / 30
      `[B,S,K] → [B·S·K] →` buffers ordenados por experto
      (`topk_scores_experts_sorted`, `routed_scores`).
 
-     Ese eje único combina token y ranura top-k. **Decidir si sigue siendo
-     `token` con extensión `B·S·K` o hace falta la identidad 19:**
+     Ese eje único combina token y ranura top-k.
 
      ```
      routed_item := una ocurrencia token–experto producida por expansión
                     top-k, antes o después de la ordenación por experto
      ```
 
-     **No se añade automáticamente.** Primero hay que comprobar que ese eje
-     aparece en una plantilla de los PEs y que `token` no ofrece una
-     representación fiel. **A diferencia de un rol sin usar, una identidad
-     adicional puede solaparse con otra y afectar a T4**: los roles son baratos
-     porque las fases los mantienen disjuntos; las identidades no.
+     **Decisión (cerrada en el dry-run sintético de E0):** se añade
+     `routed_item` como identidad 19. `token` con extensión `B·S·K` se
+     descarta como representación de este eje porque no ofrece una
+     representación fiel: pierde justo la distinción token/ranura-top-k que
+     T4 necesita para rastrear Dispatch/Combine.
+
+     **Procedencia en el código real de referencia** (HEAD
+     `9a711521ac2973fe230a3f38efc6aedfc7d1f9c6`, `torchtitan`): en
+     `moe.py`/`token_dispatcher.py` el propio código distingue `T` (tokens,
+     `B·S` aplanado) de `N` (tokens enrutados, `T·K`) como conceptos
+     distintos, con buffers propios (`routed_input_RD`,
+     `token_indices_experts_sorted_N`, `topk_scores_experts_sorted_N`). Tras
+     el dispatch, la propiedad del dato sigue la distribución por experto, no
+     la distribución por token.
+
+     **A diferencia de un rol sin usar, una identidad adicional puede
+     solaparse con otra y afectar a T4**: los roles son baratos porque las
+     fases los mantienen disjuntos; las identidades no. Verificado: `token`
+     (fase 1, sin expansión top-k) y `routed_item` (expansión top-k) son
+     mutuamente excluyentes por construcción — ningún eje puede cumplir ambas
+     condiciones a la vez, así que no hay ambigüedad de fase.
    - **Embedding y LMHead, atados y sin atar** — partición
      `input_feature`/`output_feature`, y comprobar **si algún colectivo sirve a
      ambos roles** (→ `HUELLA_NO_DERIVABLE`).
 
    Cada caso produce: identidades usadas, `axis_opaque` generados, identidades
    arquitectónicas necesarias **con su procedencia**. **La suficiencia de las
-   18 identidades y de los 13 roles la decide este dry-run.**
+   19 identidades (18 originales + `routed_item`) y de los 13 roles la decide
+   este dry-run.**
 6. `hash_manifiesto` y el hash del preregistro se recalculan **después** del
    último ajuste de calibración.
 

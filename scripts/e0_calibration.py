@@ -3,7 +3,8 @@
 
 This is deliberately not the Planlock extractor and does not inspect the PR
 population.  It exercises the symbolic invariants that must be decided before
-the real, distributed E0 run: fused GQA QKV, MoE routed-item identity, and
+the real, distributed E0 run: fused GQA QKV, the MoE routed-item identity
+(closed: adopted as identity 19, see preregistro §1.6.3/§1.6.4.B/§8.3.5), and
 tied/untied embedding and LMHead roles.
 """
 
@@ -31,7 +32,7 @@ AXES: FrozenSet[str] = frozenset(
         "batch", "seq", "token", "query_pos", "key_pos", "model",
         "input_feature", "output_feature", "head", "kv_head", "head_dim",
         "ffn_hidden", "vocab", "expert", "topk", "capacity", "expert_offset",
-        "layer", "axis_opaque",
+        "layer", "routed_item", "axis_opaque",
     }
 )
 
@@ -102,23 +103,28 @@ def qkv_gqa() -> Finding:
 
 def moe_routed_item() -> Finding:
     before = (Axis("batch", "B"), Axis("seq", "S"), Axis("topk", "K"))
-    after = (Axis("token", "B*S*K"), Axis("expert", "E"), Axis("expert_offset", "E+1"))
+    after = (Axis("routed_item", "B*S*K"), Axis("expert", "E"), Axis("expert_offset", "E+1"))
     errors = validate_form(before) + validate_form(after)
     token_loses_slot = True
-    routed_item_required = token_loses_slot and any(a.expr == "B*S*K" for a in after)
+    routed_item_used = any(a.identity == "routed_item" and a.expr == "B*S*K" for a in after)
     notes = [
         "Router indices, offsets, counts and capacity mask are control_metadata.",
         "Differentiable topk_scores/routed_scores remain activation.",
-        "Flattening B·S·K loses the token-vs-top-k-slot distinction if represented as token alone.",
+        "Flattening B·S·K as plain token would lose the token-vs-top-k-slot distinction.",
+        "Decision closed in E0 calibration: routed_item adopted as identity 19 "
+        "(§1.6.3, §1.6.4.B, §8.3.5), citing torchtitan moe.py/token_dispatcher.py "
+        "buffers routed_input_RD, token_indices_experts_sorted_N, "
+        "topk_scores_experts_sorted_N at reference HEAD.",
     ]
-    if errors or not routed_item_required:
+    if errors or not (token_loses_slot and routed_item_used):
         return Finding("moe_dispatch_combine", "FAIL", "routed_item_decision_invalid", (), 0, (), tuple(), tuple(errors + notes))
     return Finding(
-        "moe_dispatch_combine", "REVIEW", "propose_routed_item_identity_19", 
-        ("token", "topk", "expert", "expert_offset"), 0,
+        "moe_dispatch_combine", "PASS", "routed_item_identity_19_adopted",
+        ("routed_item", "topk", "expert", "expert_offset"), 0,
         ("Router", "Dispatch", "GroupedGEMM", "Combine"),
-        ("§1.2 token/expert ownership", "§8.3 MoE flattened buffer fixture"),
-        tuple(notes + ["This is a calibration proposal, not an automatic vocabulary change."]),
+        ("§1.2 token/expert ownership", "§1.6.3/§1.6.4.B routed_item identity 19",
+         "§8.3.5 MoE flattened buffer fixture"),
+        tuple(notes),
     )
 
 
@@ -167,7 +173,7 @@ def run(repo: Path) -> Dict[str, object]:
         "roles_vocabulary_count": len(ROLES),
         "axes_vocabulary_count_including_sentinel": len(AXES),
         "findings": [asdict(f) for f in findings],
-        "decision": "REVIEW_REQUIRED_BEFORE_SIGNATURE",
+        "decision": "VOCABULARY_DECISIONS_CLOSED_REAL_PE_VALIDATION_PENDING",
     }
 
 
