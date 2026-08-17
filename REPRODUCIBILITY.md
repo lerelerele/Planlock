@@ -159,12 +159,14 @@ linear output with the phase-2 `output_feature=(H+2*Hkv)*Dh` fallback, then the
 post-split query `[B,S,H,Dh]`, key/value `[B,S,Hkv,Dh]` (multiplicity `2*L`),
 inner-attention output, and flattened residual form. It does not invent a
 materialized attention-score tensor: FlexAttention may fuse that internal.
-The first MLA audit intentionally emits `HUELLA_NO_DERIVABLE`. At the pinned
-DeepSeek debugmodel, Q/K use a 192-wide head (`128+64`) while V uses 128, so the
-single normative `Dh` symbol cannot represent both. The post-split KV latent
-width 512 and the no-position/rotary components also lack normative symbols.
-`mla_signature_audit` records these as E0-blocking failures and lists forbidden
-shortcuts; no literal-by-value identity or completeness claim is permitted.
+The first MLA audit emitted `HUELLA_NO_DERIVABLE`, which triggered the §9 E0
+exception before signing. The minimal vocabulary extension adds architectural
+symbols `Qn`, `Qr`, `Dv`, `Rkv` and semantic identities `kv_latent` and
+`attention_feature`. Q/K/V retain `head_dim` with different expressions
+(`Qn+Qr`, `Qn+Qr`, `Dv`) rather than forcing `Dh`; the compressed KV axis uses
+`Rkv`, and the flattened pre-`wo` output uses `H*Dv`. The audit now reports
+`MLA_VOCABULARY_SUFFICIENT`, and `moe_mla_activation_tensor_signatures` emits
+14 reviewed families without `axis_opaque`.
 
 Typical workflow:
 

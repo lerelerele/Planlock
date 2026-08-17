@@ -327,6 +327,10 @@ firma_tensor := (forma_normalizada, clase_dtype, clase_tensor)
 | `L` | Capas |
 | `K` | Expertos seleccionados por token (top-k) |
 | `C` | Posiciones de capacidad por experto |
+| `Qn` | Componente no-posicional por cabeza de Q/K en MLA |
+| `Qr` | Componente rotatoria por cabeza de Q/K en MLA |
+| `Dv` | Dimensión por cabeza de V en MLA |
+| `Rkv` | Rango latente comprimido KV en MLA |
 
 **Literales:**
 
@@ -400,14 +404,14 @@ eje_tensorial     := (id_semantico, expr)
 forma_normalizada := multiconjunto de ejes tensoriales
 ```
 
-**Vocabulario cerrado (19 + centinela):**
+**Vocabulario cerrado (21 + centinela):**
 
 ```
 batch, seq, token, query_pos, key_pos,
 model, input_feature, output_feature,
 head, kv_head, head_dim, ffn_hidden, vocab,
 expert, topk, capacity, expert_offset, layer,
-routed_item,
+routed_item, kv_latent, attention_feature,
 axis_opaque
 ```
 
@@ -415,6 +419,11 @@ axis_opaque
 §8.3.5):** una ocurrencia token–experto producida por expansión top-k, antes o
 después de la ordenación por experto. Ver §1.6.4.B para su regla de asignación
 y §8.3.5 para la procedencia en el código real de referencia.
+
+**Extensión MLA cerrada en E0 (identidades 20–21):** `kv_latent` es el eje
+comprimido de rango `Rkv` entre `wkv_a` y `wkv_b`; `attention_feature` es el
+aplanado `H·Dv` de la salida por cabezas antes de `wo`. No se identifica con
+`model`: en `PE_moe`, `H·Dv=2048` y `D=256`.
 
 **Buena formación:** ningún `id_semantico` **conocido** se repite dentro de una
 misma forma. **`axis_opaque` SÍ puede repetirse** y conserva su multiplicidad
@@ -489,6 +498,8 @@ produce `HUELLA_NO_DERIVABLE`. El dry-run debe comprobar exactamente eso.
 | Cabezas de query | `head` |
 | Cabezas KV antes de repetición | `kv_head` |
 | Dimensión por cabeza | `head_dim` |
+| Rango latente KV comprimido de MLA | `kv_latent` |
+| Cabeza y dimensión V aplanadas antes de `wo` en MLA | `attention_feature` |
 | Expertos en logits del router | `expert` |
 | Ranura top-k de scores o pesos de combinación **diferenciables** | `topk` |
 | Vocabulario en logits de salida | `vocab` |
@@ -504,9 +515,10 @@ polinomio, pero el eje no es `head` ni `kv_head` —esas aparecen tras el
 `HUELLA_NO_DERIVABLE` si `tp` lo shardea. Al descomponerlo, **T4 detecta
 correctamente la división**.
 
-> **Alcance limitado:** cubre una proyección MLA **todavía fusionada**, pero
-> MLA puede introducir ejes latentes propios que ninguna identidad actual
-> describe. Eso lo decide el dry-run.
+> **Extensión MLA de E0:** las proyecciones todavía fusionadas usan este
+> fallback. Tras el split, `kv_latent` y `attention_feature` cubren los dos
+> ejes propios que el dry-run demostró necesarios; Q/K/V conservan `head_dim`
+> con expresiones distintas (`Qn+Qr`, `Qn+Qr`, `Dv`) sin forzar un único `Dh`.
 
 **B — fase 3:** `axis_opaque`.
 
@@ -1056,14 +1068,15 @@ cobertura_posible    = 1 − FUERA_DE_PE / 30
    No se inventa un tensor de scores materializado: FlexAttention puede
    fusionarlo internamente y esa materialización física está fuera de alcance.
 
-   **Hallazgo bloqueante del dry-run MLA:** con el vocabulario actual,
-   `PE_moe` produce `HUELLA_NO_DERIVABLE`. Q/K tienen dimensión por cabeza
-   `128+64=192`, V tiene `128`; el único símbolo `Dh` no puede denotar ambas.
-   Tras el split de `wkv_a`, el latente KV `512` y las componentes no-posicional
-   `128`/rotatoria `64` tampoco tienen símbolos normativos. Queda prohibido
-   asignarlos por coincidencia de valores, forzar un único `Dh` o esconder el
-   hueco como `axis_opaque` para declarar cobertura. E0 no puede cerrarse hasta
-   revisar §1.6 dentro de la excepción pre-firma de §9.
+   **Resolución del hallazgo MLA dentro de la excepción pre-firma de §9:** se
+   añaden los símbolos `Qn`, `Qr`, `Dv`, `Rkv` y solo dos identidades:
+   `kv_latent` y `attention_feature`. Q/K/V comparten la identidad semántica
+   `head_dim`, pero con expresiones `Qn+Qr`, `Qn+Qr` y `Dv`; no se fuerza `Dh`.
+   El latente tras `wkv_a` usa `(kv_latent,Rkv)` y la salida `[B,S,H,Dv]`
+   aplanada antes de `wo` usa `(attention_feature,H·Dv)`. En `PE_moe` se
+   congelan `Qn=128`, `Qr=64`, `Dv=128`, `Rkv=512` con procedencia directa del
+   `_debugmodel`. El audit pasa sin `axis_opaque`; siguen prohibidas las
+   asignaciones por coincidencia numérica.
 3. **Se derivan las huellas de referencia COMPLETAS de ambos PEs** y se
    calculan allí los cuatro sub-umbrales de E6. Los casos especiales de abajo
    **no las sustituyen**.
@@ -1119,7 +1132,7 @@ cobertura_posible    = 1 − FUERA_DE_PE / 30
 
    Cada caso produce: identidades usadas, `axis_opaque` generados, identidades
    arquitectónicas necesarias **con su procedencia**. **La suficiencia de las
-   19 identidades (18 originales + `routed_item`) y de los 13 roles la decide
+   21 identidades (18 originales + `routed_item` + 2 de MLA) y de los 13 roles la decide
    este dry-run.**
 6. `hash_manifiesto` y el hash del preregistro se recalculan **después** del
    último ajuste de calibración.

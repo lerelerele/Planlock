@@ -385,9 +385,34 @@ def unused():
         self.assertEqual(audit["status"], "HUELLA_NO_DERIVABLE")
         self.assertTrue(audit["e0_blocking"])
         reasons = " ".join(item["reason"] for item in audit["failures"])
-        self.assertIn("unequal QK and V", reasons)
-        self.assertIn("kv_lora_rank", reasons)
+        self.assertIn("symbol Qn", reasons)
+        self.assertIn("symbol Rkv", reasons)
         self.assertFalse(audit["e0_closed"])
+
+    def test_mla_catalog_uses_extended_symbols_without_forcing_dh(self) -> None:
+        manifest = {
+            "pes": {
+                "PE_moe": {
+                    "dimensiones_mla": {
+                        "qk_nope_head_dim": 128,
+                        "qk_rope_head_dim": 64,
+                        "v_head_dim": 128,
+                        "kv_lora_rank": 512,
+                    },
+                    "simbolos": {"Qn": 128, "Qr": 64, "Dv": 128, "Rkv": 512},
+                    "dtype_classes": {"param": "f16"},
+                }
+            }
+        }
+        audit = MODULE.mla_signature_audit(manifest)
+        self.assertEqual(audit["status"], "MLA_VOCABULARY_SUFFICIENT")
+        catalog = MODULE.moe_mla_activation_catalog(manifest)
+        self.assertEqual(len(catalog), 14)
+        latent = next(item for item in catalog if item.logical_parameter.endswith("kv_latent"))
+        flattened = next(item for item in catalog if item.logical_parameter.endswith("flattened_output"))
+        self.assertIn(("kv_latent", "Rkv"), latent.normalized_form)
+        self.assertIn(("attention_feature", "H*Dv"), flattened.normalized_form)
+        self.assertFalse(any("Dh" in expr for item in catalog for _, expr in item.normalized_form))
 
 
 if __name__ == "__main__":

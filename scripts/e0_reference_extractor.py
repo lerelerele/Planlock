@@ -101,7 +101,8 @@ KNOWN_AXIS_IDENTITIES = {
     "batch", "seq", "token", "query_pos", "key_pos", "model",
     "input_feature", "output_feature", "head", "kv_head", "head_dim",
     "ffn_hidden", "vocab", "expert", "topk", "capacity",
-    "expert_offset", "layer", "routed_item", "axis_opaque",
+    "expert_offset", "layer", "routed_item", "kv_latent",
+    "attention_feature", "axis_opaque",
 }
 
 
@@ -990,47 +991,26 @@ def mla_signature_audit(manifest: dict[str, object]) -> dict[str, object]:
     """Prove whether DeepSeek MLA fits the preregistered signature vocabulary."""
     spec = manifest["pes"]["PE_moe"]
     dimensions = spec["dimensiones_mla"]
-    qk_dim = dimensions["qk_nope_head_dim"] + dimensions["qk_rope_head_dim"]
-    value_dim = dimensions["v_head_dim"]
     latent_dim = dimensions["kv_lora_rank"]
     symbols = spec["simbolos"]
-    failures = []
-    if qk_dim != value_dim:
-        failures.append(
-            {
-                "tensor_paths": ["q_BLNH", "k_BLNH", "v_BLNH"],
-                "reason": "one normative Dh symbol cannot denote unequal QK and V head dimensions",
-                "observed": {"qk_head_dim": qk_dim, "v_head_dim": value_dim},
-            }
-        )
-    if "Dh" not in symbols:
-        failures.append(
-            {
-                "tensor_paths": ["q_BLNH", "k_BLNH", "v_BLNH"],
-                "reason": "PE_moe has no valid Dh architectural symbol",
-                "observed": {"manifest_symbols": sorted(symbols)},
-            }
-        )
-    failures.append(
+    required = {
+        "Qn": dimensions["qk_nope_head_dim"],
+        "Qr": dimensions["qk_rope_head_dim"],
+        "Dv": dimensions["v_head_dim"],
+        "Rkv": latent_dim,
+    }
+    failures = [
         {
-            "tensor_paths": ["wkv_a.output", "kv_latent"],
-            "reason": "kv_lora_rank has no normative semantic identity or symbol after the fused linear split",
-            "observed": {"kv_lora_rank": latent_dim},
+            "tensor_paths": ["q", "k", "v", "kv_latent"],
+            "reason": f"missing or invalid MLA symbol {name}",
+            "observed": {"expected": expected, "actual": symbols.get(name)},
         }
-    )
-    failures.append(
-        {
-            "tensor_paths": ["q_nope", "q_pe", "k_nope", "k_pe"],
-            "reason": "MLA no-position and rotary head components require distinct architectural expressions absent from the normative symbol table",
-            "observed": {
-                "qk_nope_head_dim": dimensions["qk_nope_head_dim"],
-                "qk_rope_head_dim": dimensions["qk_rope_head_dim"],
-            },
-        }
-    )
+        for name, expected in required.items()
+        if symbols.get(name) != expected
+    ]
     return {
-        "status": "HUELLA_NO_DERIVABLE",
-        "e0_blocking": True,
+        "status": "HUELLA_NO_DERIVABLE" if failures else "MLA_VOCABULARY_SUFFICIENT",
+        "e0_blocking": bool(failures),
         "e0_closed": False,
         "reference_sha": REFERENCE_SHA,
         "implementation": "torchtitan/models/deepseek_v3/model.py::Attention.forward",
@@ -1041,6 +1021,57 @@ def mla_signature_audit(manifest: dict[str, object]) -> dict[str, object]:
             "do not hide a sharded or split latent dimension as axis_opaque to claim completeness",
         ],
     }
+
+
+def moe_mla_activation_catalog(manifest: dict[str, object]) -> list[StorageSemantic]:
+    """Catalog MLA activations after the E0 vocabulary extension."""
+    audit = mla_signature_audit(manifest)
+    if audit["e0_blocking"]:
+        raise ValueError("MLA activation catalog requires a sufficient vocabulary")
+    spec = manifest["pes"]["PE_moe"]
+    dtype_class = spec["dtype_classes"]["param"]
+    common = {
+        "pe": "PE_moe",
+        "tp_placement": "NOT_COMPOSED",
+        "tensor_class": "activation",
+        "dtype_class": dtype_class,
+        "multiplicity": "L",
+        "provenance": (
+            "torchtitan/models/deepseek_v3/model.py::Attention.forward",
+            "torchtitan/models/deepseek_v3/__init__.py::_debugmodel",
+            "candidate manifest dimensiones_mla and symbols Qn/Qr/Dv/Rkv",
+            "preregistration §1.6.4.B MLA extension",
+        ),
+        "status": "SEMANTIC_TENSOR_SIGNATURE_CATALOGED",
+    }
+    prefix = (("batch", "B"), ("seq", "S"))
+    entries = [
+        ("layers.*.attention.wq.output", "ColLinear", prefix + (("output_feature", "H*(Qn+Qr)"),)),
+        ("layers.*.attention.q", "Attention", prefix + (("head", "H"), ("head_dim", "Qn+Qr"))),
+        ("layers.*.attention.q_nope", "Attention", prefix + (("head", "H"), ("head_dim", "Qn"))),
+        ("layers.*.attention.q_pe", "Attention", prefix + (("head", "H"), ("head_dim", "Qr"))),
+        ("layers.*.attention.wkv_a.fused_output", "TPReplicatedLinear", prefix + (("output_feature", "Rkv+Qr"),)),
+        ("layers.*.attention.kv_latent", "Attention", prefix + (("kv_latent", "Rkv"),)),
+        ("layers.*.attention.k_pe", "Attention", prefix + (("head_dim", "Qr"),)),
+        ("layers.*.attention.wkv_b.fused_output", "ColLinear", prefix + (("output_feature", "H*(Qn+Dv)"),)),
+        ("layers.*.attention.k_nope", "Attention", prefix + (("head", "H"), ("head_dim", "Qn"))),
+        ("layers.*.attention.k", "Attention", prefix + (("head", "H"), ("head_dim", "Qn+Qr"))),
+        ("layers.*.attention.v", "Attention", prefix + (("head", "H"), ("head_dim", "Dv"))),
+        ("layers.*.attention.inner_output", "Attention", prefix + (("head", "H"), ("head_dim", "Dv"))),
+        ("layers.*.attention.flattened_output", "Attention", prefix + (("attention_feature", "H*Dv"),)),
+        ("layers.*.attention.wo.output", "RowLinear", prefix + (("model", "D"),)),
+    ]
+    catalog = [
+        StorageSemantic(
+            **common,
+            logical_parameter=name,
+            role=role,
+            normalized_form=form,
+        )
+        for name, role, form in entries
+    ]
+    validate_storage_signatures(catalog)
+    return catalog
 
 
 def verify_reference(repo: Path) -> str:
@@ -1132,6 +1163,7 @@ def run(
     dense_activation_signatures = dense_nonattention_activation_catalog(manifest)
     dense_attention_signatures = dense_attention_activation_catalog(manifest)
     mla_audit = mla_signature_audit(manifest)
+    mla_activation_signatures = moe_mla_activation_catalog(manifest)
     return {
         "status": "PROTOTYPE_PARTIAL_CLASSIFICATION",
         "e0_closed": False,
@@ -1154,7 +1186,6 @@ def run(
             "Cataloged signatures are not yet composed with producer/consumer placements and roles into all seven template fields.",
             "Framework-generated FSDP/HSDP and pipeline communications are not yet expanded into templates.",
             "Static candidates have not yet been cross-checked against runtime execution paths.",
-            "PE_moe MLA is HUELLA_NO_DERIVABLE under the current identity/symbol vocabulary: QK and V head dimensions differ and KV latent/component dimensions have no normative symbols.",
         ],
         "pe_summary": by_pe,
         "logical_transition_candidates": logical_transitions(candidates),
@@ -1187,6 +1218,9 @@ def run(
             asdict(item) for item in dense_attention_signatures
         ],
         "mla_signature_audit": mla_audit,
+        "moe_mla_activation_tensor_signatures": [
+            asdict(item) for item in mla_activation_signatures
+        ],
         "hsdp_runtime_crosscheck": (
             "CONFIRMED_CPU_GLOO_MECHANICS"
             if hsdp_trace is not None

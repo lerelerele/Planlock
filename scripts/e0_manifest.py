@@ -213,6 +213,16 @@ def validate(repo: Path, manifest: dict[str, object]) -> dict[str, object]:
                 "kv_lora_rank",
             }:
                 raise ValueError("PE_moe must freeze all reviewed MLA dimensions")
+            expected_mla_symbols = {
+                "Qn": mla["qk_nope_head_dim"],
+                "Qr": mla["qk_rope_head_dim"],
+                "Dv": mla["v_head_dim"],
+                "Rkv": mla["kv_lora_rank"],
+            }
+            if {name: symbols.get(name) for name in expected_mla_symbols} != expected_mla_symbols:
+                raise ValueError(
+                    f"PE_moe MLA symbols do not match reviewed dimensions: {expected_mla_symbols}"
+                )
         if architecture["layers"] != 6:
             raise ValueError(f"{pe_name} candidate must use the six-layer debugmodel")
         if architecture["dense_layers"] + architecture["moe_layers"] != 6:

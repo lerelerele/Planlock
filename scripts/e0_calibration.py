@@ -31,7 +31,7 @@ AXES: frozenset[str] = frozenset(
         "batch", "seq", "token", "query_pos", "key_pos", "model",
         "input_feature", "output_feature", "head", "kv_head", "head_dim",
         "ffn_hidden", "vocab", "expert", "topk", "capacity", "expert_offset",
-        "layer", "routed_item", "axis_opaque",
+        "layer", "routed_item", "kv_latent", "attention_feature", "axis_opaque",
     }
 )
 
@@ -148,6 +148,44 @@ def embedding_lmhead() -> Finding:
     )
 
 
+def mla_vocabulary_extension() -> Finding:
+    forms = (
+        (Axis("head", "H"), Axis("head_dim", "Qn+Qr")),
+        (Axis("head", "H"), Axis("head_dim", "Dv")),
+        (Axis("kv_latent", "Rkv"),),
+        (Axis("attention_feature", "H*Dv"),),
+    )
+    errors = [error for form in forms for error in validate_form(form)]
+    if errors:
+        return Finding(
+            "mla_vocabulary",
+            "FAIL",
+            "mla_extension_invalid",
+            (),
+            0,
+            (),
+            (),
+            tuple(errors),
+        )
+    return Finding(
+        "mla_vocabulary",
+        "PASS",
+        "two_identities_four_symbols_sufficient",
+        ("head", "head_dim", "kv_latent", "attention_feature"),
+        0,
+        ("Attention", "ColLinear", "TPReplicatedLinear", "RowLinear"),
+        (
+            "DeepSeek _debugmodel Qn=128 Qr=64 Dv=128 Rkv=512",
+            "Attention.forward wkv_a split and pre-wo flatten",
+            "§1.6.1/§1.6.3/§1.6.4.B E0 extension",
+        ),
+        (
+            "Q/K and V retain head_dim with different expressions.",
+            "kv_latent and attention_feature avoid forbidden Shard(axis_opaque).",
+        ),
+    )
+
+
 def verify_reference(repo: Path) -> str:
     try:
         actual = subprocess.check_output(
@@ -163,7 +201,12 @@ def verify_reference(repo: Path) -> str:
 
 def run(repo: Path) -> dict[str, object]:
     actual = verify_reference(repo)
-    findings = [qkv_gqa(), moe_routed_item(), embedding_lmhead()]
+    findings = [
+        qkv_gqa(),
+        moe_routed_item(),
+        embedding_lmhead(),
+        mla_vocabulary_extension(),
+    ]
     return {
         "status": "SYNTHETIC_STRUCTURAL_ONLY",
         "e0_closed": False,
