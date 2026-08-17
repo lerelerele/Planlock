@@ -625,6 +625,37 @@ def unused():
         self.assertIn(("attention_feature", "H*Dv"), flattened.normalized_form)
         self.assertFalse(any("Dh" in expr for item in catalog for _, expr in item.normalized_form))
 
+    def test_attention_internal_audit_excludes_fused_score_tensors(self) -> None:
+        manifest = {
+            "pes": {
+                "PE_dense": {
+                    "dtype_classes": {"param": "f16"},
+                    "overrides": {"attn_backend": "flex"},
+                    "arquitectura": {"fuse_qkv": True},
+                },
+                "PE_moe": {
+                    "dtype_classes": {"param": "f16"},
+                    "overrides": {"attn_backend": "flex"},
+                    "dimensiones_mla": {
+                        "qk_nope_head_dim": 128,
+                        "qk_rope_head_dim": 64,
+                        "v_head_dim": 128,
+                        "kv_lora_rank": 512,
+                    },
+                    "simbolos": {"Qn": 128, "Qr": 64, "Dv": 128, "Rkv": 512},
+                },
+            }
+        }
+        dense = MODULE.dense_attention_activation_catalog(manifest)
+        mla = MODULE.moe_mla_activation_catalog(manifest)
+        audit = MODULE.attention_internal_materialization_audit(manifest, dense, mla)
+        self.assertEqual(audit["status"], "FUSED_INTERNAL_NOT_MATERIALIZED")
+        self.assertFalse(audit["e0_blocking"])
+        self.assertEqual(audit["materialized_tensor_families"], [])
+        self.assertIn(
+            "attention softmax/probabilities", audit["excluded_fused_operations"]
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

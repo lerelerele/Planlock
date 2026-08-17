@@ -1618,6 +1618,52 @@ def moe_mla_activation_catalog(manifest: dict[str, object]) -> list[StorageSeman
     return catalog
 
 
+def attention_internal_materialization_audit(
+    manifest: dict[str, object],
+    dense_attention: list[StorageSemantic],
+    mla_attention: list[StorageSemantic],
+) -> dict[str, object]:
+    """Confirm fused FlexAttention internals are not invented as tensor families."""
+    for pe in ("PE_dense", "PE_moe"):
+        if manifest["pes"][pe]["overrides"].get("attn_backend") != "flex":
+            raise ValueError(f"attention materialization audit requires flex for {pe}")
+    dense_names = {item.logical_parameter for item in dense_attention}
+    mla_names = {item.logical_parameter for item in mla_attention}
+    required_dense = {
+        "layers.*.attention.query_BLNH",
+        "layers.*.attention.{key,value}_BLNH",
+        "layers.*.attention.inner_output_BLNH",
+    }
+    required_mla = {
+        "layers.*.attention.q",
+        "layers.*.attention.k",
+        "layers.*.attention.v",
+        "layers.*.attention.inner_output",
+    }
+    missing = sorted(required_dense - dense_names) + sorted(required_mla - mla_names)
+    if missing:
+        raise ValueError(f"attention boundary catalog incomplete: {missing}")
+    return {
+        "status": "FUSED_INTERNAL_NOT_MATERIALIZED",
+        "e0_blocking": False,
+        "e0_closed": False,
+        "reference_sha": REFERENCE_SHA,
+        "backend": "flex",
+        "materialized_tensor_families": [],
+        "reviewed_boundaries": sorted(required_dense | required_mla),
+        "excluded_fused_operations": [
+            "QK^T score product",
+            "attention softmax/probabilities",
+            "probability-value product",
+        ],
+        "provenance": [
+            "torchtitan/models/common/attention.py::FlexAttention.forward",
+            "torch.nn.attention.flex_attention.flex_attention",
+            "preregistration §1.6.4.B and E0 calibration decision",
+        ],
+    }
+
+
 def verify_reference(repo: Path) -> str:
     try:
         actual = subprocess.check_output(
@@ -1723,6 +1769,9 @@ def run(
     )
     mla_audit = mla_signature_audit(manifest)
     mla_activation_signatures = moe_mla_activation_catalog(manifest)
+    attention_internal_audit = attention_internal_materialization_audit(
+        manifest, dense_attention_signatures, mla_activation_signatures
+    )
     moe_tp_activation_templates = moe_tp_activation_seven_field_templates(
         manifest, routing_activation_signatures, mla_activation_signatures
     )
@@ -1744,7 +1793,7 @@ def run(
         },
         "blocking_gaps": [
             "Candidate PE manifest is validated but not yet frozen into the preregistration.",
-            "Parameter, logical gradient, AdamW optimizer-state, standard MoE routing, and dense fused-QKV attention-boundary signatures are cataloged; attention score internals and MLA remain incomplete.",
+            "Parameter, logical gradient, AdamW optimizer-state, standard MoE routing, dense fused-QKV, and MLA attention-boundary signatures are cataloged; fused FlexAttention score/probability internals are audited as non-materialized.",
             "Dense FSDP/HSDP, PE_moe parameter/gradient, pipeline, explicit MoE dispatch, and dense plus PE_moe TP/CP activation signatures are composed into seven-field candidates.",
             "Framework-generated FSDP/HSDP and pipeline communications are not yet expanded into templates.",
             "Static candidates have not yet been cross-checked against runtime execution paths.",
@@ -1801,6 +1850,7 @@ def run(
             asdict(item) for item in dense_attention_signatures
         ],
         "mla_signature_audit": mla_audit,
+        "attention_internal_materialization_audit": attention_internal_audit,
         "moe_mla_activation_tensor_signatures": [
             asdict(item) for item in mla_activation_signatures
         ],

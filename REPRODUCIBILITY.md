@@ -167,6 +167,12 @@ symbols `Qn`, `Qr`, `Dv`, `Rkv` and semantic identities `kv_latent` and
 `Rkv`, and the flattened pre-`wo` output uses `H*Dv`. The audit now reports
 `MLA_VOCABULARY_SUFFICIENT`, and `moe_mla_activation_tensor_signatures` emits
 14 reviewed families without `axis_opaque`.
+`attention_internal_materialization_audit` closes the remaining ambiguity
+without fabricating tensors: both selected PEs use FlexAttention, so QK score,
+softmax/probability, and probability-value operations remain fused rather than
+observable tensor families. The audit requires the reviewed dense and MLA
+Q/K/V/output boundaries and reports `FUSED_INTERNAL_NOT_MATERIALIZED` as a
+non-blocking result.
 Before composing seven-field templates, the framework audit also corrected the
 dense FSDP group. At the pinned default backend, TorchTitan defines
 `fsdp=dp_shard*cp`; therefore `PE_dense` communicates over the canonical

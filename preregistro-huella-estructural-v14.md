@@ -1143,6 +1143,13 @@ cobertura_posible    = 1 − FUERA_DE_PE / 30
    congelan `Qn=128`, `Qr=64`, `Dv=128`, `Rkv=512` con procedencia directa del
    `_debugmodel`. El audit pasa sin `axis_opaque`; siguen prohibidas las
    asignaciones por coincidencia numérica.
+
+   El audit de materialización interna confirma además que ambos PEs usan
+   FlexAttention. QKᵀ, softmax/probabilidades y su aplicación a V permanecen
+   fusionados: no constituyen familias tensoriales observables y no se inventan
+   para completar la huella. El resultado
+   `FUSED_INTERNAL_NOT_MATERIALIZED` es no bloqueante y exige que sí estén
+   catalogadas las fronteras Q/K/V/salida dense y MLA.
 3. **Se derivan las huellas de referencia COMPLETAS de ambos PEs** y se
    calculan allí los cuatro sub-umbrales de E6. Los casos especiales de abajo
    **no las sustituyen**.
