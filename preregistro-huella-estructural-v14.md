@@ -1033,10 +1033,13 @@ cobertura_posible    = 1 − FUERA_DE_PE / 30
 
    Para `PE_moe` el manifiesto congela además
    `moe_comm_backend=standard`, que selecciona `AllToAllTokenDispatcher`. Sus
-   IDs top-k, mapeo token↔routed-item, counts por experto y permutación posterior
-   se catalogan como `control_metadata/i64` con multiplicidad `L_moe`.
-   `topk_scores` queda expresamente fuera de este catálogo porque es
-   diferenciable y por §1.6.6 pertenece a `activation`.
+   IDs top-k, mapa booleano de routing, mapeo token↔routed-item, counts por
+   experto y permutación posterior se catalogan como `control_metadata` con
+   multiplicidad `L_moe`: IDs/counts `i64`, mapa `bool`. Los IDs conservan
+   `[B,S,K]` antes del aplanado; solo los buffers posteriores usan
+   `routed_item=B*S*K`. Las puntuaciones completas/top-k/reordenadas se
+   catalogan aparte como activaciones `f32`; los payloads expertos y la salida
+   combinada usan la clase de baja precisión del manifiesto.
 3. **Se derivan las huellas de referencia COMPLETAS de ambos PEs** y se
    calculan allí los cuatro sub-umbrales de E6. Los casos especiales de abajo
    **no las sustituyen**.

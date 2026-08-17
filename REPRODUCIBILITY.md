@@ -140,10 +140,13 @@ python scripts/e0_optimizer_state_probe.py --output-root <external-directory>
 The MoE candidate additionally freezes `moe_comm_backend=standard`, selecting
 `AllToAllTokenDispatcher` at the pinned HEAD. The extractor emits five
 `control_metadata_tensor_signatures` per logical MoE layer: top-k expert IDs,
-the expert-sorted token mapping, local and exchanged expert counts, and the
-post-exchange permutation. Integer IDs/counts are `i64`; token-slot mappings
-use the calibrated `routed_item=B*S*K` identity. Differentiable top-k scores
-are deliberately excluded here and remain activation work.
+the boolean routing map, expert-sorted token mapping, local and exchanged
+expert counts, and the post-exchange permutation. IDs/counts are `i64`; the
+routing map is `bool`. The pre-flatten top-k IDs preserve `[B,S,K]`, while
+post-flatten token-slot mappings use calibrated `routed_item=B*S*K`.
+`moe_routing_activation_tensor_signatures` separately records full and top-k
+router scores (`f32`), reordered differentiable scores (`f32`), routed expert
+inputs/outputs (manifest low precision), and the combined `[B,S,D]` output.
 
 Typical workflow:
 

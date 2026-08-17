@@ -764,7 +764,6 @@ def moe_control_metadata_catalog(manifest: dict[str, object]) -> list[StorageSem
         "pe": "PE_moe",
         "tp_placement": "NOT_COMPOSED",
         "multiplicity": "L_moe",
-        "dtype_class": "i64",
         "tensor_class": "control_metadata",
         "provenance": (
             "torchtitan/models/deepseek_v3/__init__.py::model_registry moe_comm_backend=standard",
@@ -778,27 +777,38 @@ def moe_control_metadata_catalog(manifest: dict[str, object]) -> list[StorageSem
         (
             "topk_expert_ids_TK",
             "Router",
-            (("token", "B*S"), ("topk", "K")),
+            (("batch", "B"), ("seq", "S"), ("topk", "K")),
+            "i64",
+        ),
+        (
+            "routing_map_BLE",
+            "Router",
+            (("batch", "B"), ("seq", "S"), ("expert", "E")),
+            "bool",
         ),
         (
             "token_indices_experts_sorted_N",
             "Dispatch",
             (("routed_item", "B*S*K"),),
+            "i64",
         ),
         (
             "num_local_tokens_per_expert_E",
             "Dispatch",
             (("expert", "E"),),
+            "i64",
         ),
         (
             "num_global_tokens_per_local_expert_EP_e",
             "Dispatch",
             (("expert", "E"),),
+            "i64",
         ),
         (
             "permuted_indices_R",
             "Dispatch",
             (("routed_item", "B*S*K"),),
+            "i64",
         ),
     ]
     catalog = [
@@ -807,8 +817,50 @@ def moe_control_metadata_catalog(manifest: dict[str, object]) -> list[StorageSem
             logical_parameter=name,
             role=role,
             normalized_form=form,
+            dtype_class=dtype_class,
         )
-        for name, role, form in entries
+        for name, role, form, dtype_class in entries
+    ]
+    validate_storage_signatures(catalog)
+    return catalog
+
+
+def moe_routing_activation_catalog(manifest: dict[str, object]) -> list[StorageSemantic]:
+    """Catalog differentiable tensors on the reviewed standard MoE route."""
+    spec = manifest["pes"]["PE_moe"]
+    if spec["overrides"].get("moe_comm_backend") != "standard":
+        raise ValueError("routing activation catalog requires the standard dispatcher")
+    low_precision = spec["dtype_classes"]["param"]
+    common = {
+        "pe": "PE_moe",
+        "tp_placement": "NOT_COMPOSED",
+        "multiplicity": "L_moe",
+        "tensor_class": "activation",
+        "provenance": (
+            "torchtitan/models/common/moe.py::TokenChoiceTopKRouter.forward",
+            "torchtitan/models/common/moe.py::RoutedExperts.forward",
+            "torchtitan/models/common/token_dispatcher.py::AllToAllTokenDispatcher",
+            "preregistration §1.6.4.B/§1.6.6",
+        ),
+        "status": "SEMANTIC_TENSOR_SIGNATURE_CATALOGED",
+    }
+    entries = [
+        ("scores_BLE", "Router", (("batch", "B"), ("seq", "S"), ("expert", "E")), "f32"),
+        ("topk_scores_BLK", "Router", (("batch", "B"), ("seq", "S"), ("topk", "K")), "f32"),
+        ("topk_scores_experts_sorted_N", "Router", (("routed_item", "B*S*K"),), "f32"),
+        ("routed_input_RD", "Dispatch", (("routed_item", "B*S*K"), ("model", "D")), low_precision),
+        ("routed_output_RD", "GroupedGEMM", (("routed_item", "B*S*K"), ("model", "D")), low_precision),
+        ("out_BLD", "Combine", (("batch", "B"), ("seq", "S"), ("model", "D")), low_precision),
+    ]
+    catalog = [
+        StorageSemantic(
+            **common,
+            logical_parameter=name,
+            role=role,
+            normalized_form=form,
+            dtype_class=dtype_class,
+        )
+        for name, role, form, dtype_class in entries
     ]
     validate_storage_signatures(catalog)
     return catalog
@@ -899,6 +951,7 @@ def run(
         manifest, dense_parameters + moe_parameters
     )
     control_metadata_signatures = moe_control_metadata_catalog(manifest)
+    routing_activation_signatures = moe_routing_activation_catalog(manifest)
     return {
         "status": "PROTOTYPE_PARTIAL_CLASSIFICATION",
         "e0_closed": False,
@@ -917,7 +970,7 @@ def run(
         },
         "blocking_gaps": [
             "Candidate PE manifest is validated but not yet frozen into the preregistration.",
-            "Parameter, logical gradient, AdamW optimizer-state, and standard MoE routing-metadata signatures are cataloged; activation signatures remain incomplete.",
+            "Parameter, logical gradient, AdamW optimizer-state, and standard MoE routing metadata/activation signatures are cataloged; dense and attention/MLA activation signatures remain incomplete.",
             "Cataloged signatures are not yet composed with producer/consumer placements and roles into all seven template fields.",
             "Framework-generated FSDP/HSDP and pipeline communications are not yet expanded into templates.",
             "Static candidates have not yet been cross-checked against runtime execution paths.",
@@ -942,6 +995,9 @@ def run(
         ],
         "control_metadata_tensor_signatures": [
             asdict(item) for item in control_metadata_signatures
+        ],
+        "moe_routing_activation_tensor_signatures": [
+            asdict(item) for item in routing_activation_signatures
         ],
         "hsdp_runtime_crosscheck": (
             "CONFIRMED_CPU_GLOO_MECHANICS"

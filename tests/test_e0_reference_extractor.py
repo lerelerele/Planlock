@@ -302,13 +302,35 @@ def unused():
             "pes": {"PE_moe": {"overrides": {"moe_comm_backend": "standard"}}}
         }
         catalog = MODULE.moe_control_metadata_catalog(manifest)
-        self.assertEqual(len(catalog), 5)
+        self.assertEqual(len(catalog), 6)
         self.assertTrue(all(item.tensor_class == "control_metadata" for item in catalog))
-        self.assertTrue(all(item.dtype_class == "i64" for item in catalog))
+        self.assertEqual({item.dtype_class for item in catalog}, {"i64", "bool"})
         topk = next(item for item in catalog if item.logical_parameter == "topk_expert_ids_TK")
-        self.assertEqual(topk.normalized_form, (("token", "B*S"), ("topk", "K")))
+        self.assertEqual(
+            topk.normalized_form,
+            (("batch", "B"), ("seq", "S"), ("topk", "K")),
+        )
         routed = [item for item in catalog if item.normalized_form == (("routed_item", "B*S*K"),)]
         self.assertEqual(len(routed), 2)
+
+    def test_moe_routing_activations_separate_scores_and_payload_dtypes(self) -> None:
+        manifest = {
+            "pes": {
+                "PE_moe": {
+                    "overrides": {"moe_comm_backend": "standard"},
+                    "dtype_classes": {"param": "f16"},
+                }
+            }
+        }
+        catalog = MODULE.moe_routing_activation_catalog(manifest)
+        self.assertEqual(len(catalog), 6)
+        self.assertTrue(all(item.tensor_class == "activation" for item in catalog))
+        scores = [item for item in catalog if "scores" in item.logical_parameter]
+        payloads = [item for item in catalog if item.logical_parameter.startswith("routed_")]
+        self.assertTrue(all(item.dtype_class == "f32" for item in scores))
+        self.assertTrue(all(item.dtype_class == "f16" for item in payloads))
+        flattened = next(item for item in scores if "sorted" in item.logical_parameter)
+        self.assertEqual(flattened.normalized_form, (("routed_item", "B*S*K"),))
 
 
 if __name__ == "__main__":
