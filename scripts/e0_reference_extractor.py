@@ -986,6 +986,63 @@ def dense_attention_activation_catalog(
     return catalog
 
 
+def mla_signature_audit(manifest: dict[str, object]) -> dict[str, object]:
+    """Prove whether DeepSeek MLA fits the preregistered signature vocabulary."""
+    spec = manifest["pes"]["PE_moe"]
+    dimensions = spec["dimensiones_mla"]
+    qk_dim = dimensions["qk_nope_head_dim"] + dimensions["qk_rope_head_dim"]
+    value_dim = dimensions["v_head_dim"]
+    latent_dim = dimensions["kv_lora_rank"]
+    symbols = spec["simbolos"]
+    failures = []
+    if qk_dim != value_dim:
+        failures.append(
+            {
+                "tensor_paths": ["q_BLNH", "k_BLNH", "v_BLNH"],
+                "reason": "one normative Dh symbol cannot denote unequal QK and V head dimensions",
+                "observed": {"qk_head_dim": qk_dim, "v_head_dim": value_dim},
+            }
+        )
+    if "Dh" not in symbols:
+        failures.append(
+            {
+                "tensor_paths": ["q_BLNH", "k_BLNH", "v_BLNH"],
+                "reason": "PE_moe has no valid Dh architectural symbol",
+                "observed": {"manifest_symbols": sorted(symbols)},
+            }
+        )
+    failures.append(
+        {
+            "tensor_paths": ["wkv_a.output", "kv_latent"],
+            "reason": "kv_lora_rank has no normative semantic identity or symbol after the fused linear split",
+            "observed": {"kv_lora_rank": latent_dim},
+        }
+    )
+    failures.append(
+        {
+            "tensor_paths": ["q_nope", "q_pe", "k_nope", "k_pe"],
+            "reason": "MLA no-position and rotary head components require distinct architectural expressions absent from the normative symbol table",
+            "observed": {
+                "qk_nope_head_dim": dimensions["qk_nope_head_dim"],
+                "qk_rope_head_dim": dimensions["qk_rope_head_dim"],
+            },
+        }
+    )
+    return {
+        "status": "HUELLA_NO_DERIVABLE",
+        "e0_blocking": True,
+        "e0_closed": False,
+        "reference_sha": REFERENCE_SHA,
+        "implementation": "torchtitan/models/deepseek_v3/model.py::Attention.forward",
+        "failures": failures,
+        "forbidden_shortcuts": [
+            "do not map both unequal QK and V dimensions to Dh",
+            "do not promote architectural literals 128/64/512 without normative symbols and provenance",
+            "do not hide a sharded or split latent dimension as axis_opaque to claim completeness",
+        ],
+    }
+
+
 def verify_reference(repo: Path) -> str:
     try:
         actual = subprocess.check_output(
@@ -1074,6 +1131,7 @@ def run(
     routing_activation_signatures = moe_routing_activation_catalog(manifest)
     dense_activation_signatures = dense_nonattention_activation_catalog(manifest)
     dense_attention_signatures = dense_attention_activation_catalog(manifest)
+    mla_audit = mla_signature_audit(manifest)
     return {
         "status": "PROTOTYPE_PARTIAL_CLASSIFICATION",
         "e0_closed": False,
@@ -1096,6 +1154,7 @@ def run(
             "Cataloged signatures are not yet composed with producer/consumer placements and roles into all seven template fields.",
             "Framework-generated FSDP/HSDP and pipeline communications are not yet expanded into templates.",
             "Static candidates have not yet been cross-checked against runtime execution paths.",
+            "PE_moe MLA is HUELLA_NO_DERIVABLE under the current identity/symbol vocabulary: QK and V head dimensions differ and KV latent/component dimensions have no normative symbols.",
         ],
         "pe_summary": by_pe,
         "logical_transition_candidates": logical_transitions(candidates),
@@ -1127,6 +1186,7 @@ def run(
         "dense_attention_activation_tensor_signatures": [
             asdict(item) for item in dense_attention_signatures
         ],
+        "mla_signature_audit": mla_audit,
         "hsdp_runtime_crosscheck": (
             "CONFIRMED_CPU_GLOO_MECHANICS"
             if hsdp_trace is not None

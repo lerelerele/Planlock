@@ -367,6 +367,28 @@ def unused():
         query = next(item for item in catalog if "query_BLNH" in item.logical_parameter)
         self.assertIn(("head", "H"), query.normalized_form)
 
+    def test_mla_audit_blocks_unequal_head_dims_and_unsymbolized_latent(self) -> None:
+        manifest = {
+            "pes": {
+                "PE_moe": {
+                    "dimensiones_mla": {
+                        "qk_nope_head_dim": 128,
+                        "qk_rope_head_dim": 64,
+                        "v_head_dim": 128,
+                        "kv_lora_rank": 512,
+                    },
+                    "simbolos": {"D": 256, "H": 16},
+                }
+            }
+        }
+        audit = MODULE.mla_signature_audit(manifest)
+        self.assertEqual(audit["status"], "HUELLA_NO_DERIVABLE")
+        self.assertTrue(audit["e0_blocking"])
+        reasons = " ".join(item["reason"] for item in audit["failures"])
+        self.assertIn("unequal QK and V", reasons)
+        self.assertIn("kv_lora_rank", reasons)
+        self.assertFalse(audit["e0_closed"])
+
 
 if __name__ == "__main__":
     unittest.main()

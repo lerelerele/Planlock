@@ -159,6 +159,12 @@ linear output with the phase-2 `output_feature=(H+2*Hkv)*Dh` fallback, then the
 post-split query `[B,S,H,Dh]`, key/value `[B,S,Hkv,Dh]` (multiplicity `2*L`),
 inner-attention output, and flattened residual form. It does not invent a
 materialized attention-score tensor: FlexAttention may fuse that internal.
+The first MLA audit intentionally emits `HUELLA_NO_DERIVABLE`. At the pinned
+DeepSeek debugmodel, Q/K use a 192-wide head (`128+64`) while V uses 128, so the
+single normative `Dh` symbol cannot represent both. The post-split KV latent
+width 512 and the no-position/rotary components also lack normative symbols.
+`mla_signature_audit` records these as E0-blocking failures and lists forbidden
+shortcuts; no literal-by-value identity or completeness claim is permitted.
 
 Typical workflow:
 

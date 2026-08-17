@@ -1055,6 +1055,15 @@ cobertura_posible    = 1 − FUERA_DE_PE / 30
    catalogan la salida de atención por cabezas y su forma residual aplanada.
    No se inventa un tensor de scores materializado: FlexAttention puede
    fusionarlo internamente y esa materialización física está fuera de alcance.
+
+   **Hallazgo bloqueante del dry-run MLA:** con el vocabulario actual,
+   `PE_moe` produce `HUELLA_NO_DERIVABLE`. Q/K tienen dimensión por cabeza
+   `128+64=192`, V tiene `128`; el único símbolo `Dh` no puede denotar ambas.
+   Tras el split de `wkv_a`, el latente KV `512` y las componentes no-posicional
+   `128`/rotatoria `64` tampoco tienen símbolos normativos. Queda prohibido
+   asignarlos por coincidencia de valores, forzar un único `Dh` o esconder el
+   hueco como `axis_opaque` para declarar cobertura. E0 no puede cerrarse hasta
+   revisar §1.6 dentro de la excepción pre-firma de §9.
 3. **Se derivan las huellas de referencia COMPLETAS de ambos PEs** y se
    calculan allí los cuatro sub-umbrales de E6. Los casos especiales de abajo
    **no las sustituyen**.
