@@ -112,6 +112,13 @@ template in every layer.
 shared experts, and routed grouped-GEMM parameters. Dense and sparse mesh
 families remain distinct, and identical `w1/w3` expert templates use the
 calibrated multiplicity `2·L_moe`.
+Both storage catalogs now emit and validate the complete §1.6 tensor signature
+for each logical parameter family: canonical semantic axes and expressions,
+the manifest-frozen dtype class, and `tensor_class=param`. The validator rejects
+unknown or repeated known axes, empty expressions, and unsupported dtype or
+tensor classes. These are tensor signatures, not yet seven-field templates:
+producer/consumer placements and framework transitions still require semantic
+composition.
 
 Typical workflow:
 

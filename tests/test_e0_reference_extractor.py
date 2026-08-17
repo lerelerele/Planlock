@@ -217,6 +217,10 @@ def unused():
         self.assertEqual(swiglu_inputs.multiplicity, "2*L")
         self.assertEqual(swiglu_inputs.role, "ColLinear")
         self.assertEqual(swiglu_inputs.dtype_class, "f16")
+        self.assertEqual(swiglu_inputs.tensor_class, "param")
+        self.assertEqual(
+            swiglu_inputs.status, "SEMANTIC_TENSOR_SIGNATURE_CATALOGED"
+        )
 
     def test_moe_storage_catalog_separates_dense_and_sparse_families(self) -> None:
         manifest = {"pes": {"PE_moe": {"dtype_classes": {"param": "f16"}}}}
@@ -227,6 +231,23 @@ def unused():
         self.assertTrue(all(item.tp_placement.startswith("sparse:") for item in routed))
         self.assertTrue(all(item.tp_placement.startswith("dense:") for item in shared))
         self.assertEqual(routed[0].multiplicity, "2*L_moe")
+        self.assertTrue(all(item.tensor_class == "param" for item in catalog))
+
+    def test_storage_signature_rejects_repeated_known_axis(self) -> None:
+        item = MODULE.StorageSemantic(
+            pe="PE_dense",
+            logical_parameter="fixture.weight",
+            role="ColLinear",
+            normalized_form=(("input_feature", "D"), ("input_feature", "F")),
+            tp_placement="tp:Shard(output_feature)",
+            multiplicity="1",
+            dtype_class="f16",
+            tensor_class="param",
+            provenance=("fixture",),
+            status="SEMANTIC_TENSOR_SIGNATURE_CATALOGED",
+        )
+        with self.assertRaisesRegex(ValueError, "repeats a known axis"):
+            MODULE.validate_storage_signatures([item])
 
 
 if __name__ == "__main__":

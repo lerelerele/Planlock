@@ -92,8 +92,47 @@ class StorageSemantic:
     tp_placement: str
     multiplicity: str
     dtype_class: str
+    tensor_class: str
     provenance: tuple[str, ...]
     status: str
+
+
+KNOWN_AXIS_IDENTITIES = {
+    "batch", "seq", "token", "query_pos", "key_pos", "model",
+    "input_feature", "output_feature", "head", "kv_head", "head_dim",
+    "ffn_hidden", "vocab", "expert", "topk", "capacity",
+    "expert_offset", "layer", "routed_item", "axis_opaque",
+}
+
+
+def validate_storage_signatures(items: list[StorageSemantic]) -> None:
+    """Validate the three normative components of every §1.6 signature."""
+    allowed_dtypes = {"f16", "bf16", "f32", "f64", "int", "bool"}
+    allowed_tensor_classes = {
+        "activation", "control_metadata", "param", "grad", "optimizer_state"
+    }
+    for item in items:
+        identities = [identity for identity, _ in item.normalized_form]
+        unknown = set(identities) - KNOWN_AXIS_IDENTITIES
+        if unknown:
+            raise ValueError(
+                f"{item.logical_parameter} has unknown axis identities: {sorted(unknown)}"
+            )
+        known = [identity for identity in identities if identity != "axis_opaque"]
+        if len(known) != len(set(known)):
+            raise ValueError(
+                f"{item.logical_parameter} repeats a known axis identity"
+            )
+        if any(not expression for _, expression in item.normalized_form):
+            raise ValueError(f"{item.logical_parameter} has an empty axis expression")
+        if item.dtype_class not in allowed_dtypes:
+            raise ValueError(
+                f"{item.logical_parameter} has unsupported dtype class {item.dtype_class}"
+            )
+        if item.tensor_class not in allowed_tensor_classes:
+            raise ValueError(
+                f"{item.logical_parameter} has unsupported tensor class {item.tensor_class}"
+            )
 
 
 def dotted_name(node: ast.AST) -> str:
@@ -518,7 +557,9 @@ def framework_candidates(
 def dense_storage_catalog(manifest: dict[str, object]) -> list[StorageSemantic]:
     """Catalog the unambiguous Llama3 debugmodel logical parameter families."""
     dtype_class = manifest["pes"]["PE_dense"]["dtype_classes"]["param"]
-    common = {"pe": "PE_dense", "dtype_class": dtype_class}
+    common = {
+        "pe": "PE_dense", "dtype_class": dtype_class, "tensor_class": "param"
+    }
     entries = [
         ("tok_embeddings.weight", "Embedding", (("vocab", "V"), ("output_feature", "D")), "tp:Shard(vocab)", "1"),
         ("norm.weight", "Norm", (("model", "D"),), "tp:Replicate", "1"),
@@ -554,7 +595,7 @@ def dense_storage_catalog(manifest: dict[str, object]) -> list[StorageSemantic]:
             "L",
         ),
     ]
-    return [
+    catalog = [
         StorageSemantic(
             **common,
             logical_parameter=name,
@@ -567,16 +608,20 @@ def dense_storage_catalog(manifest: dict[str, object]) -> list[StorageSemantic]:
                 "torchtitan/models/common/decoder_sharding.py",
                 "preregistration §1.3 and §1.6.4.A",
             ),
-            status="SEMANTIC_STORAGE_CATALOGED",
+            status="SEMANTIC_TENSOR_SIGNATURE_CATALOGED",
         )
         for name, role, form, placement, multiplicity in entries
     ]
+    validate_storage_signatures(catalog)
+    return catalog
 
 
 def moe_storage_catalog(manifest: dict[str, object]) -> list[StorageSemantic]:
     """Catalog MoE-specific DeepSeek debugmodel logical parameter families."""
     dtype_class = manifest["pes"]["PE_moe"]["dtype_classes"]["param"]
-    common = {"pe": "PE_moe", "dtype_class": dtype_class}
+    common = {
+        "pe": "PE_moe", "dtype_class": dtype_class, "tensor_class": "param"
+    }
     entries = [
         (
             "layers.moe.*.router.gate.weight",
@@ -614,7 +659,7 @@ def moe_storage_catalog(manifest: dict[str, object]) -> list[StorageSemantic]:
             "L_moe",
         ),
     ]
-    return [
+    catalog = [
         StorageSemantic(
             **common,
             logical_parameter=name,
@@ -628,10 +673,12 @@ def moe_storage_catalog(manifest: dict[str, object]) -> list[StorageSemantic]:
                 "torchtitan/models/common/moe_sharding.py",
                 "preregistration §1.3 and §1.6.4.A",
             ),
-            status="SEMANTIC_STORAGE_CATALOGED",
+            status="SEMANTIC_TENSOR_SIGNATURE_CATALOGED",
         )
         for name, role, form, placement, multiplicity in entries
     ]
+    validate_storage_signatures(catalog)
+    return catalog
 def verify_reference(repo: Path) -> str:
     try:
         actual = subprocess.check_output(
@@ -726,7 +773,8 @@ def run(
         },
         "blocking_gaps": [
             "Candidate PE manifest is validated but not yet frozen into the preregistration.",
-            "Placements and tensor signatures are not yet normalized into all seven template fields.",
+            "Parameter tensor signatures are cataloged; activation, gradient, control-metadata, and optimizer-state signatures remain incomplete.",
+            "Cataloged signatures are not yet composed with producer/consumer placements and roles into all seven template fields.",
             "Framework-generated FSDP/HSDP and pipeline communications are not yet expanded into templates.",
             "Static candidates have not yet been cross-checked against runtime execution paths.",
         ],

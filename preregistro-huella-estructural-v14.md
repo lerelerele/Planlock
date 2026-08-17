@@ -1006,6 +1006,15 @@ cobertura_posible    = 1 − FUERA_DE_PE / 30
    candidato HSDP de `PE_dense` necesita una transición `AllReduce` sobre
    `dp_r`, además de las transiciones FSDP sobre `dp_s`. No determina todavía
    roles, firmas tensoriales ni multiplicidades completas, y no es NCCL/GPU.
+
+   **Descomposición semántica de almacenamiento (calibración, no cierre):**
+   el extractor cataloga por separado las familias lógicas de parámetros dense
+   y MoE y emite para cada una la firma §1.6 completa: forma normalizada,
+   `clase_dtype` congelada por el manifiesto y `clase_tensor=param`. Una
+   validación mecánica rechaza identidades desconocidas o conocidas repetidas,
+   expresiones vacías y clases fuera del vocabulario. Esto cierra las firmas de
+   almacenamiento, pero todavía no las compone con productor, consumidor,
+   placements y transición para formar las siete-tuplas de §1.1.
 3. **Se derivan las huellas de referencia COMPLETAS de ambos PEs** y se
    calculan allí los cuatro sub-umbrales de E6. Los casos especiales de abajo
    **no las sustituyen**.
