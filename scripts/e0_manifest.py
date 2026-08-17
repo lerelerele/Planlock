@@ -99,6 +99,24 @@ def function_parameter_default(path: Path, function_name: str, parameter: str) -
     return None
 
 
+def function_keyword_constant(path: Path, function_name: str, keyword_name: str) -> object:
+    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+    function = next(
+        (node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name == function_name),
+        None,
+    )
+    if function is None:
+        return None
+    values = [
+        keyword.value.value
+        for node in ast.walk(function)
+        if isinstance(node, ast.Call)
+        for keyword in node.keywords
+        if keyword.arg == keyword_name and isinstance(keyword.value, ast.Constant)
+    ]
+    return values[0] if len(values) == 1 else None
+
+
 def validate_partition(parts: list[list[str]], layer_count: int = 6) -> None:
     flattened = [name for part in parts for name in part]
     expected = ["tok_embeddings", *(f"layers.{i}" for i in range(layer_count)), "norm", "lm_head"]
@@ -128,6 +146,21 @@ def validate(repo: Path, manifest: dict[str, object]) -> dict[str, object]:
     )
     if dispatcher_default != "standard":
         raise ValueError(f"unexpected DeepSeek debugmodel dispatcher: {dispatcher_default}")
+    for model_name in ("llama3", "deepseek_v3"):
+        attention_default = function_parameter_default(
+            repo / f"torchtitan/models/{model_name}/__init__.py",
+            "model_registry",
+            "attn_backend",
+        )
+        if attention_default != "flex":
+            raise ValueError(
+                f"unexpected {model_name} attention backend: {attention_default}"
+            )
+    fused_qkv = function_keyword_constant(
+        repo / "torchtitan/models/llama3/__init__.py", "_debugmodel", "fuse_qkv"
+    )
+    if fused_qkv is not True:
+        raise ValueError(f"unexpected Llama debugmodel fuse_qkv: {fused_qkv}")
 
     results = {}
     pes = manifest.get("pes")
@@ -146,6 +179,8 @@ def validate(repo: Path, manifest: dict[str, object]) -> dict[str, object]:
         architecture = pe["arquitectura"]
         if pe_name == "PE_moe" and overrides.get("moe_comm_backend") != "standard":
             raise ValueError("PE_moe must freeze the reviewed standard dispatcher")
+        if overrides.get("attn_backend") != "flex":
+            raise ValueError(f"{pe_name} must freeze the reviewed flex attention backend")
         if pe.get("dtype_classes") != {"param": "f16", "grad_reduce": "f32"}:
             raise ValueError(
                 f"{pe_name} must explicitly freeze bfloat16 params and float32 reductions"
@@ -165,6 +200,10 @@ def validate(repo: Path, manifest: dict[str, object]) -> dict[str, object]:
             raise ValueError(f"{pe_name} symbol L does not match architecture layers")
         if pe_name == "PE_dense" and symbols.get("D") != symbols.get("H") * symbols.get("Dh"):
             raise ValueError("PE_dense does not validate D=H*Dh")
+        if pe_name == "PE_dense" and (
+            architecture.get("fuse_qkv") is not True or symbols.get("Hkv") != symbols.get("H")
+        ):
+            raise ValueError("PE_dense must freeze fused QKV with Hkv=H")
         if pe_name == "PE_moe":
             mla = pe.get("dimensiones_mla", {})
             if set(mla) != {

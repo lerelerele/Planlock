@@ -1047,6 +1047,14 @@ cobertura_posible    = 1 − FUERA_DE_PE / 30
    multiplicidad calibrada `2·L`. QKV, separación por cabezas, posiciones y
    tensores internos de atención quedan fuera hasta completar su descomposición
    específica; no se sustituyen por formas residuales aproximadas.
+
+   El manifiesto dense congela `attn_backend=flex` y QKV fusionado. La salida
+   lineal previa al split usa el fallback normativo
+   `output_feature=(H+2·Hkv)·Dh`; después se separan query `[B,S,H,Dh]` y
+   key/value `[B,S,Hkv,Dh]`, estas últimas con multiplicidad `2·L`. También se
+   catalogan la salida de atención por cabezas y su forma residual aplanada.
+   No se inventa un tensor de scores materializado: FlexAttention puede
+   fusionarlo internamente y esa materialización física está fuera de alcance.
 3. **Se derivan las huellas de referencia COMPLETAS de ambos PEs** y se
    calculan allí los cuatro sub-umbrales de E6. Los casos especiales de abajo
    **no las sustituyen**.

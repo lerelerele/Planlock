@@ -61,6 +61,17 @@ def default_adamw():
                 "standard",
             )
 
+    def test_extracts_unique_call_keyword_constant(self) -> None:
+        import tempfile
+
+        source = "def model():\n    return build(fuse_qkv=True)\n"
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "model.py"
+            path.write_text(source, encoding="utf-8")
+            self.assertIs(
+                MODULE.function_keyword_constant(path, "model", "fuse_qkv"), True
+            )
+
 
 if __name__ == "__main__":
     unittest.main()

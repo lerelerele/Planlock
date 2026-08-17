@@ -5,7 +5,7 @@
     "PE_dense": {
       "modulo_registro": "torchtitan.models.llama3.config_registry",
       "funcion_config": "llama3_debugmodel",
-      "arquitectura": {"layers": 6, "dense_layers": 6, "moe_layers": 0, "mtp_layers": 0},
+      "arquitectura": {"layers": 6, "dense_layers": 6, "moe_layers": 0, "mtp_layers": 0, "fuse_qkv": true},
       "dtype_classes": {"param": "f16", "grad_reduce": "f32"},
       "optimizer": {"name": "AdamW", "implementation": "fused", "amsgrad": false, "state_tensors": {"exp_avg": "same_as_param", "exp_avg_sq": "same_as_param", "step": "f32"}},
       "identidades_arquitectonicas": {"D": "H*Dh"},
@@ -19,6 +19,7 @@
         "expert_parallel_degree": 1,
         "enable_sequence_parallel": true,
         "spmd_backend": "default",
+        "attn_backend": "flex",
         "pipeline_parallel_schedule": "Interleaved1F1B",
         "module_fqns_per_model_part": [
           ["tok_embeddings", "layers.0"],
@@ -52,6 +53,7 @@
         "expert_parallel_degree": 2,
         "enable_sequence_parallel": true,
         "spmd_backend": "default",
+        "attn_backend": "flex",
         "moe_comm_backend": "standard",
         "pipeline_parallel_schedule": "1F1B",
         "module_fqns_per_model_part": [

@@ -153,6 +153,12 @@ FFN output, final norm, and LMHead logits. It preserves the calibrated `2*L`
 coefficient for the structurally identical `w1/w3` outputs. QKV projections,
 head splits, positional tensors, and attention score/value forms are excluded
 until their attention-specific identities are decomposed.
+The dense manifest now also freezes `attn_backend=flex` and fused QKV. The
+`dense_attention_activation_tensor_signatures` catalog records the fused
+linear output with the phase-2 `output_feature=(H+2*Hkv)*Dh` fallback, then the
+post-split query `[B,S,H,Dh]`, key/value `[B,S,Hkv,Dh]` (multiplicity `2*L`),
+inner-attention output, and flattened residual form. It does not invent a
+materialized attention-score tensor: FlexAttention may fuse that internal.
 
 Typical workflow:
 

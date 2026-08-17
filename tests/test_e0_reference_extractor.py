@@ -347,6 +347,26 @@ def unused():
         self.assertIn(("vocab", "V"), logits.normalized_form)
         self.assertTrue(all("input_feature" not in dict(item.normalized_form) for item in catalog))
 
+    def test_dense_fused_qkv_split_preserves_query_and_kv_identities(self) -> None:
+        manifest = {
+            "pes": {
+                "PE_dense": {
+                    "overrides": {"attn_backend": "flex"},
+                    "arquitectura": {"fuse_qkv": True},
+                    "dtype_classes": {"param": "f16"},
+                }
+            }
+        }
+        catalog = MODULE.dense_attention_activation_catalog(manifest)
+        self.assertEqual(len(catalog), 5)
+        fused = next(item for item in catalog if "fused_output" in item.logical_parameter)
+        self.assertIn(("output_feature", "(H+2*Hkv)*Dh"), fused.normalized_form)
+        kv = next(item for item in catalog if "{key,value}" in item.logical_parameter)
+        self.assertEqual(kv.multiplicity, "2*L")
+        self.assertIn(("kv_head", "Hkv"), kv.normalized_form)
+        query = next(item for item in catalog if "query_BLNH" in item.logical_parameter)
+        self.assertIn(("head", "H"), query.normalized_form)
+
 
 if __name__ == "__main__":
     unittest.main()

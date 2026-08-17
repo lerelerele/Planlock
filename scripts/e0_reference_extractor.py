@@ -916,6 +916,76 @@ def dense_nonattention_activation_catalog(
     return catalog
 
 
+def dense_attention_activation_catalog(
+    manifest: dict[str, object],
+) -> list[StorageSemantic]:
+    """Catalog the reviewed fused-QKV Llama attention boundary tensors."""
+    spec = manifest["pes"]["PE_dense"]
+    if spec["overrides"].get("attn_backend") != "flex":
+        raise ValueError("dense attention catalog requires flex attention")
+    if spec["arquitectura"].get("fuse_qkv") is not True:
+        raise ValueError("dense attention catalog requires fused QKV")
+    dtype_class = spec["dtype_classes"]["param"]
+    common = {
+        "pe": "PE_dense",
+        "tp_placement": "NOT_COMPOSED",
+        "tensor_class": "activation",
+        "dtype_class": dtype_class,
+        "provenance": (
+            "torchtitan/models/llama3/__init__.py::_debugmodel fuse_qkv=True",
+            "torchtitan/models/common/attention.py::FusedQKVLinear.forward",
+            "torchtitan/models/common/attention.py::GQA.forward",
+            "preregistration §1.6.4.B fused-linear fallback and QKV split",
+        ),
+        "status": "SEMANTIC_TENSOR_SIGNATURE_CATALOGED",
+    }
+    prefix = (("batch", "B"), ("seq", "S"))
+    entries = [
+        (
+            "layers.*.attention.qkv_linear.fused_output",
+            "ColLinear",
+            prefix + (("output_feature", "(H+2*Hkv)*Dh"),),
+            "L",
+        ),
+        (
+            "layers.*.attention.query_BLNH",
+            "Attention",
+            prefix + (("head", "H"), ("head_dim", "Dh")),
+            "L",
+        ),
+        (
+            "layers.*.attention.{key,value}_BLNH",
+            "Attention",
+            prefix + (("kv_head", "Hkv"), ("head_dim", "Dh")),
+            "2*L",
+        ),
+        (
+            "layers.*.attention.inner_output_BLNH",
+            "Attention",
+            prefix + (("head", "H"), ("head_dim", "Dh")),
+            "L",
+        ),
+        (
+            "layers.*.attention.flattened_output_BLD",
+            "Attention",
+            prefix + (("model", "D"),),
+            "L",
+        ),
+    ]
+    catalog = [
+        StorageSemantic(
+            **common,
+            logical_parameter=name,
+            role=role,
+            normalized_form=form,
+            multiplicity=multiplicity,
+        )
+        for name, role, form, multiplicity in entries
+    ]
+    validate_storage_signatures(catalog)
+    return catalog
+
+
 def verify_reference(repo: Path) -> str:
     try:
         actual = subprocess.check_output(
@@ -1003,6 +1073,7 @@ def run(
     control_metadata_signatures = moe_control_metadata_catalog(manifest)
     routing_activation_signatures = moe_routing_activation_catalog(manifest)
     dense_activation_signatures = dense_nonattention_activation_catalog(manifest)
+    dense_attention_signatures = dense_attention_activation_catalog(manifest)
     return {
         "status": "PROTOTYPE_PARTIAL_CLASSIFICATION",
         "e0_closed": False,
@@ -1021,7 +1092,7 @@ def run(
         },
         "blocking_gaps": [
             "Candidate PE manifest is validated but not yet frozen into the preregistration.",
-            "Parameter, logical gradient, AdamW optimizer-state, standard MoE routing, and dense non-attention activation signatures are cataloged; QKV/attention/MLA internals remain incomplete.",
+            "Parameter, logical gradient, AdamW optimizer-state, standard MoE routing, and dense fused-QKV attention-boundary signatures are cataloged; attention score internals and MLA remain incomplete.",
             "Cataloged signatures are not yet composed with producer/consumer placements and roles into all seven template fields.",
             "Framework-generated FSDP/HSDP and pipeline communications are not yet expanded into templates.",
             "Static candidates have not yet been cross-checked against runtime execution paths.",
@@ -1052,6 +1123,9 @@ def run(
         ],
         "dense_nonattention_activation_tensor_signatures": [
             asdict(item) for item in dense_activation_signatures
+        ],
+        "dense_attention_activation_tensor_signatures": [
+            asdict(item) for item in dense_attention_signatures
         ],
         "hsdp_runtime_crosscheck": (
             "CONFIRMED_CPU_GLOO_MECHANICS"
