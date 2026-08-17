@@ -7,6 +7,7 @@
       "funcion_config": "llama3_debugmodel",
       "arquitectura": {"layers": 6, "dense_layers": 6, "moe_layers": 0, "mtp_layers": 0},
       "dtype_classes": {"param": "f16", "grad_reduce": "f32"},
+      "optimizer": {"name": "AdamW", "implementation": "fused", "amsgrad": false, "state_tensors": {"exp_avg": "same_as_param", "exp_avg_sq": "same_as_param", "step": "f32"}},
       "identidades_arquitectonicas": {"D": "H*Dh"},
       "simbolos": {"D": 256, "V": 2048, "L": 6, "H": 16, "Hkv": 16, "Dh": 16, "F": 768},
       "overrides": {
@@ -38,6 +39,7 @@
       "funcion_config": "deepseek_v3_debugmodel",
       "arquitectura": {"layers": 6, "dense_layers": 1, "moe_layers": 5, "mtp_layers": 0, "shared_experts": 2},
       "dtype_classes": {"param": "f16", "grad_reduce": "f32"},
+      "optimizer": {"name": "AdamW", "implementation": "fused", "amsgrad": false, "state_tensors": {"exp_avg": "same_as_param", "exp_avg_sq": "same_as_param", "step": "f32"}},
       "identidades_arquitectonicas": {},
       "simbolos": {"D": 256, "V": 2048, "L": 6, "H": 16, "E": 8, "K": 3, "F": 256},
       "dimensiones_mla": {"qk_nope_head_dim": 128, "qk_rope_head_dim": 64, "v_head_dim": 128, "kv_lora_rank": 512},

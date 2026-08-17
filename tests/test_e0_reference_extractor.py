@@ -268,6 +268,35 @@ def unused():
             self.assertEqual(gradient.dtype_class, "f32")
             self.assertEqual(gradient.logical_parameter, f"{parameter.logical_parameter}::grad")
 
+    def test_adamw_state_signatures_include_two_moments_and_scalar_step(self) -> None:
+        manifest = {
+            "pes": {
+                "PE_dense": {
+                    "dtype_classes": {"param": "f16", "grad_reduce": "f32"},
+                    "optimizer": {
+                        "name": "AdamW",
+                        "implementation": "fused",
+                        "amsgrad": False,
+                        "state_tensors": {
+                            "exp_avg": "same_as_param",
+                            "exp_avg_sq": "same_as_param",
+                            "step": "f32",
+                        },
+                    },
+                }
+            }
+        }
+        parameter = MODULE.dense_storage_catalog(manifest)[0]
+        states = MODULE.optimizer_state_signature_catalog(manifest, [parameter])
+        self.assertEqual(len(states), 3)
+        moments = [item for item in states if not item.logical_parameter.endswith("step")]
+        step = next(item for item in states if item.logical_parameter.endswith("step"))
+        self.assertTrue(all(item.normalized_form == parameter.normalized_form for item in moments))
+        self.assertTrue(all(item.dtype_class == "f16" for item in moments))
+        self.assertTrue(all(item.role == "OptimizerUpdate" for item in states))
+        self.assertEqual(step.normalized_form, ())
+        self.assertEqual(step.dtype_class, "f32")
+
 
 if __name__ == "__main__":
     unittest.main()

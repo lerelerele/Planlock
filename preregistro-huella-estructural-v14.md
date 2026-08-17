@@ -1021,6 +1021,15 @@ cobertura_posible    = 1 − FUERA_DE_PE / 30
    exclusivamente `dtype_classes.grad_reduce` del manifiesto. Esta derivación
    no presupone placements de entrada/salida de FSDP/HSDP; dichos placements se
    fijan al componer las transiciones completas.
+
+   El optimizador seleccionado por ambos registros es `default_adamw`, cuya
+   configuración revisada fija AdamW fusionado y `amsgrad=false`. Un probe real
+   de PyTorch materializa un paso para parámetros fp16 y bf16: `exp_avg` y
+   `exp_avg_sq` conservan forma y dtype del parámetro, mientras `step` es un
+   escalar fp32. Por cada familia lógica se catalogan por tanto dos estados con
+   la forma del parámetro y un estado escalar vacío; todos llevan
+   `clase_tensor=optimizer_state` y rol `OptimizerUpdate`. El probe no valida
+   todavía sus placements distribuidos.
 3. **Se derivan las huellas de referencia COMPLETAS de ambos PEs** y se
    calculan allí los cuatro sub-umbrales de E6. Los casos especiales de abajo
    **no las sustituyen**.

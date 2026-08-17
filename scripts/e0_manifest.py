@@ -11,6 +11,16 @@ from pathlib import Path
 
 REFERENCE_SHA = "9a711521ac2973fe230a3f38efc6aedfc7d1f9c6"
 EXPECTED_WORLD_SIZE = {"PE_dense": 32, "PE_moe": 8}
+EXPECTED_OPTIMIZER = {
+    "name": "AdamW",
+    "implementation": "fused",
+    "amsgrad": False,
+    "state_tensors": {
+        "exp_avg": "same_as_param",
+        "exp_avg_sq": "same_as_param",
+        "step": "f32",
+    },
+}
 
 
 def canonical_bytes(manifest: dict[str, object]) -> bytes:
@@ -22,6 +32,52 @@ def canonical_bytes(manifest: dict[str, object]) -> bytes:
 def function_names(path: Path) -> set[str]:
     tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
     return {node.name for node in tree.body if isinstance(node, ast.FunctionDef)}
+
+
+def config_uses_default_adamw(path: Path, function_name: str) -> bool:
+    """Check the selected registry function's Trainer.Config optimizer keyword."""
+    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+    function = next(
+        (node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name == function_name),
+        None,
+    )
+    if function is None:
+        return False
+    for node in ast.walk(function):
+        if not isinstance(node, ast.Call):
+            continue
+        for keyword in node.keywords:
+            if keyword.arg != "optimizer" or not isinstance(keyword.value, ast.Call):
+                continue
+            callee = keyword.value.func
+            return isinstance(callee, ast.Name) and callee.id == "default_adamw"
+    return False
+
+
+def default_adamw_contract(path: Path) -> dict[str, object]:
+    """Extract the reviewed optimizer name and container implementation default."""
+    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+    implementation = None
+    optimizer_name = None
+    for node in ast.walk(tree):
+        if (
+            isinstance(node, ast.AnnAssign)
+            and isinstance(node.target, ast.Name)
+            and node.target.id == "implementation"
+            and isinstance(node.value, ast.Constant)
+        ):
+            implementation = node.value.value
+    function = next(
+        (node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name == "default_adamw"),
+        None,
+    )
+    if function is not None:
+        for node in ast.walk(function):
+            if not isinstance(node, ast.keyword) or node.arg != "optimizer_name":
+                continue
+            if isinstance(node.value, ast.Constant):
+                optimizer_name = node.value.value
+    return {"name": optimizer_name, "implementation": implementation}
 
 
 def validate_partition(parts: list[list[str]], layer_count: int = 6) -> None:
@@ -41,6 +97,11 @@ def validate(repo: Path, manifest: dict[str, object]) -> dict[str, object]:
         raise ValueError("reference SHA mismatch")
     if manifest.get("status") != "CANDIDATE_NOT_FROZEN":
         raise ValueError("this validator only accepts an unfrozen candidate manifest")
+    optimizer_contract = default_adamw_contract(
+        repo / "torchtitan/components/optimizer.py"
+    )
+    if optimizer_contract != {"name": "AdamW", "implementation": "fused"}:
+        raise ValueError(f"unexpected default AdamW contract: {optimizer_contract}")
 
     results = {}
     pes = manifest.get("pes")
@@ -53,12 +114,16 @@ def validate(repo: Path, manifest: dict[str, object]) -> dict[str, object]:
             raise ValueError(f"missing config registry for {pe_name}: {module_path}")
         if pe["funcion_config"] not in function_names(module_path):
             raise ValueError(f"missing function_config for {pe_name}: {pe['funcion_config']}")
+        if not config_uses_default_adamw(module_path, pe["funcion_config"]):
+            raise ValueError(f"{pe_name} selected config does not use default_adamw")
         overrides = pe["overrides"]
         architecture = pe["arquitectura"]
         if pe.get("dtype_classes") != {"param": "f16", "grad_reduce": "f32"}:
             raise ValueError(
                 f"{pe_name} must explicitly freeze bfloat16 params and float32 reductions"
             )
+        if pe.get("optimizer") != EXPECTED_OPTIMIZER:
+            raise ValueError(f"{pe_name} must freeze the reviewed default AdamW state")
         identities = pe.get("identidades_arquitectonicas")
         expected_identities = {"D": "H*Dh"} if pe_name == "PE_dense" else {}
         if identities != expected_identities:
@@ -135,6 +200,7 @@ def validate(repo: Path, manifest: dict[str, object]) -> dict[str, object]:
             "partition_complete": True,
             "degrees_consistent": True,
             "architecture_consistent": True,
+            "optimizer_consistent": True,
         }
     return {
         "status": "VALID_CANDIDATE_NOT_FROZEN",

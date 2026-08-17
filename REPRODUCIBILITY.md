@@ -125,6 +125,18 @@ form, role, TP component, and symbolic multiplicity; its dtype is the
 manifest-frozen `grad_reduce` class and its tensor class is `grad`. This is a
 provenance-preserving signature derivation only: it does not assume the
 producer/consumer placement of an FSDP/HSDP reduction.
+The candidate manifest also freezes the selected optimizer as fused AdamW with
+AMSGrad disabled. `scripts/e0_optimizer_state_probe.py` materializes one real
+optimizer step for both fp16 and bf16 parameters and requires `exp_avg` and
+`exp_avg_sq` to preserve the parameter dtype and shape while `step` is a scalar
+fp32 tensor. The extractor consequently emits 42
+`optimizer_state_tensor_signatures`: two shaped moments plus one scalar step
+for each of the 14 parameter families. These remain signature records, not
+claims about FSDP/HSDP transition placements.
+
+```text
+python scripts/e0_optimizer_state_probe.py --output-root <external-directory>
+```
 
 Typical workflow:
 

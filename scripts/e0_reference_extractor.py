@@ -704,6 +704,57 @@ def gradient_signature_catalog(
     return gradients
 
 
+def optimizer_state_signature_catalog(
+    manifest: dict[str, object], parameter_catalog: list[StorageSemantic]
+) -> list[StorageSemantic]:
+    """Derive AdamW moment and scalar-step signatures from reviewed config."""
+    states: list[StorageSemantic] = []
+    for item in parameter_catalog:
+        optimizer = manifest["pes"][item.pe]["optimizer"]
+        if optimizer["name"] != "AdamW" or optimizer["amsgrad"]:
+            raise ValueError(f"unsupported optimizer state for {item.pe}")
+        state_tensors = optimizer["state_tensors"]
+        for state_name in ("exp_avg", "exp_avg_sq"):
+            if state_tensors[state_name] != "same_as_param":
+                raise ValueError(f"unsupported {state_name} dtype rule for {item.pe}")
+            states.append(
+                replace(
+                    item,
+                    logical_parameter=f"{item.logical_parameter}::optimizer.{state_name}",
+                    role="OptimizerUpdate",
+                    tensor_class="optimizer_state",
+                    provenance=item.provenance
+                    + (
+                        "selected config registry function uses default_adamw",
+                        "torchtitan/components/optimizer.py::default_adamw",
+                        "PyTorch AdamW state follows parameter dtype",
+                    ),
+                    status="SEMANTIC_TENSOR_SIGNATURE_CATALOGED",
+                )
+            )
+        if state_tensors["step"] != "f32":
+            raise ValueError(f"unsupported AdamW step dtype rule for {item.pe}")
+        states.append(
+            replace(
+                item,
+                logical_parameter=f"{item.logical_parameter}::optimizer.step",
+                role="OptimizerUpdate",
+                normalized_form=(),
+                tp_placement="scalar:no_tensor_axis_placement",
+                dtype_class="f32",
+                tensor_class="optimizer_state",
+                provenance=item.provenance
+                + (
+                    "selected config registry function uses default_adamw",
+                    "torch.optim.AdamW per-parameter scalar step state",
+                ),
+                status="SEMANTIC_TENSOR_SIGNATURE_CATALOGED",
+            )
+        )
+    validate_storage_signatures(states)
+    return states
+
+
 def verify_reference(repo: Path) -> str:
     try:
         actual = subprocess.check_output(
@@ -785,6 +836,9 @@ def run(
     gradient_signatures = gradient_signature_catalog(
         manifest, dense_parameters + moe_parameters
     )
+    optimizer_state_signatures = optimizer_state_signature_catalog(
+        manifest, dense_parameters + moe_parameters
+    )
     return {
         "status": "PROTOTYPE_PARTIAL_CLASSIFICATION",
         "e0_closed": False,
@@ -803,7 +857,7 @@ def run(
         },
         "blocking_gaps": [
             "Candidate PE manifest is validated but not yet frozen into the preregistration.",
-            "Parameter and logical gradient tensor signatures are cataloged; activation, control-metadata, and optimizer-state signatures remain incomplete.",
+            "Parameter, logical gradient, and AdamW optimizer-state tensor signatures are cataloged; activation and control-metadata signatures remain incomplete.",
             "Cataloged signatures are not yet composed with producer/consumer placements and roles into all seven template fields.",
             "Framework-generated FSDP/HSDP and pipeline communications are not yet expanded into templates.",
             "Static candidates have not yet been cross-checked against runtime execution paths.",
@@ -822,6 +876,9 @@ def run(
         ],
         "gradient_tensor_signatures": [
             asdict(item) for item in gradient_signatures
+        ],
+        "optimizer_state_tensor_signatures": [
+            asdict(item) for item in optimizer_state_signatures
         ],
         "hsdp_runtime_crosscheck": (
             "CONFIRMED_CPU_GLOO_MECHANICS"

@@ -21,6 +21,34 @@ class ManifestTests(unittest.TestCase):
     def test_canonical_hash_is_key_order_independent(self) -> None:
         self.assertEqual(MODULE.canonical_bytes({"b": 1, "a": 2}), MODULE.canonical_bytes({"a": 2, "b": 1}))
 
+    def test_finds_default_adamw_in_selected_config(self) -> None:
+        import tempfile
+
+        source = "def selected():\n    return Trainer.Config(optimizer=default_adamw(lr=1e-3))\n"
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "registry.py"
+            path.write_text(source, encoding="utf-8")
+            self.assertTrue(MODULE.config_uses_default_adamw(path, "selected"))
+            self.assertFalse(MODULE.config_uses_default_adamw(path, "missing"))
+
+    def test_extracts_default_adamw_contract(self) -> None:
+        import tempfile
+
+        source = '''
+class Container:
+    class Config:
+        implementation: str = "fused"
+def default_adamw():
+    return ParamGroupConfig(optimizer_name="AdamW")
+'''
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "optimizer.py"
+            path.write_text(source, encoding="utf-8")
+            self.assertEqual(
+                MODULE.default_adamw_contract(path),
+                {"name": "AdamW", "implementation": "fused"},
+            )
+
 
 if __name__ == "__main__":
     unittest.main()
