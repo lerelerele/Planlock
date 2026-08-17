@@ -488,6 +488,88 @@ def moe_dispatch_seven_field_templates(
     ]
 
 
+def dense_activation_seven_field_templates(
+    manifest: dict[str, object],
+    boundary_activations: list[StorageSemantic],
+    attention_activations: list[StorageSemantic],
+) -> list[SevenFieldTemplate]:
+    """Compose reviewed dense TP sequence-parallel and CP K/V transitions."""
+    spec = manifest["pes"]["PE_dense"]
+    if spec["grados"].get("tp") is None or spec["grados"].get("cp") is None:
+        raise ValueError("dense activation templates require TP and CP")
+    boundary = {item.logical_parameter: item for item in boundary_activations}
+    residual = boundary["tok_embeddings.output"]
+    kv = next(
+        item for item in attention_activations if "{key,value}_BLNH" in item.logical_parameter
+    )
+    sp = (
+        ("dp_r", "Shard(batch)"),
+        ("dp_s", "Shard(batch)"),
+        ("cp", "Shard(seq)"),
+        ("tp", "Shard(seq)"),
+    )
+    tp_replicated = sp[:-1] + (("tp", "Replicate"),)
+    tp_partial = sp[:-1] + (("tp", "Partial(Sum)"),)
+    kv_cp_sharded = (
+        ("dp_r", "Shard(batch)"),
+        ("dp_s", "Shard(batch)"),
+        ("cp", "Shard(seq)"),
+        ("tp", "Shard(kv_head)"),
+    )
+    kv_cp_replicated = kv_cp_sharded[:2] + (
+        ("cp", "Replicate"),
+        ("tp", "Shard(kv_head)"),
+    )
+    kv_cp_partial = kv_cp_sharded[:2] + (
+        ("cp", "Partial(Sum)"),
+        ("tp", "Shard(kv_head)"),
+    )
+    residual_signature = (
+        residual.normalized_form,
+        residual.dtype_class,
+        residual.tensor_class,
+    )
+    kv_signature = (kv.normalized_form, kv.dtype_class, kv.tensor_class)
+    provenance = (
+        "torchtitan/models/common/decoder_sharding.py reviewed ShardingConfig boundaries",
+        "torchtitan/models/llama3/sharding.py::set_llama3_sharding_config",
+        "preregistration §1.4 placement transitions",
+    )
+    specs = [
+        ("Embedding", tp_partial, "ReduceScatter", sp, "Norm", residual_signature, "tp", "1"),
+        ("Norm", sp, "AllGather", tp_replicated, "ColLinear", residual_signature, "tp", "2*L"),
+        ("RowLinear", tp_partial, "ReduceScatter", sp, "Opaque", residual_signature, "tp", "2*L"),
+        ("Norm", sp, "AllGather", tp_replicated, "LMHead", residual_signature, "tp", "1"),
+        ("Attention", kv_cp_sharded, "AllGather", kv_cp_replicated, "Attention", kv_signature, "cp", "2*L"),
+        ("Attention", kv_cp_partial, "ReduceScatter", kv_cp_sharded, "Attention", kv_signature, "cp", "2*L"),
+    ]
+    return [
+        SevenFieldTemplate(
+            pe="PE_dense",
+            producer_role=producer_role,
+            producer_placement=producer_placement,
+            transition=transition,
+            consumer_placement=consumer_placement,
+            consumer_role=consumer_role,
+            tensor_signature=signature,
+            communication_group=group,
+            multiplicity=multiplicity,
+            provenance=provenance,
+            status="SEVEN_FIELD_TEMPLATE_CANDIDATE",
+        )
+        for (
+            producer_role,
+            producer_placement,
+            transition,
+            consumer_placement,
+            consumer_role,
+            signature,
+            group,
+            multiplicity,
+        ) in specs
+    ]
+
+
 def dotted_name(node: ast.AST) -> str:
     if isinstance(node, ast.Name):
         return node.id
@@ -1573,6 +1655,9 @@ def run(
     )
     dense_activation_signatures = dense_nonattention_activation_catalog(manifest)
     dense_attention_signatures = dense_attention_activation_catalog(manifest)
+    dense_activation_templates = dense_activation_seven_field_templates(
+        manifest, dense_activation_signatures, dense_attention_signatures
+    )
     mla_audit = mla_signature_audit(manifest)
     mla_activation_signatures = moe_mla_activation_catalog(manifest)
     return {
@@ -1594,7 +1679,7 @@ def run(
         "blocking_gaps": [
             "Candidate PE manifest is validated but not yet frozen into the preregistration.",
             "Parameter, logical gradient, AdamW optimizer-state, standard MoE routing, and dense fused-QKV attention-boundary signatures are cataloged; attention score internals and MLA remain incomplete.",
-            "Dense FSDP/HSDP, PE_moe parameter/gradient, pipeline, and explicit MoE count/Dispatch/Combine signatures are composed into seven-field candidates; TP/CP activation transitions remain incomplete.",
+            "Dense FSDP/HSDP, PE_moe parameter/gradient, pipeline, explicit MoE dispatch, and dense TP/CP activation signatures are composed into seven-field candidates; PE_moe TP activation transitions remain incomplete.",
             "Framework-generated FSDP/HSDP and pipeline communications are not yet expanded into templates.",
             "Static candidates have not yet been cross-checked against runtime execution paths.",
         ],
@@ -1627,6 +1712,9 @@ def run(
         ],
         "moe_dispatch_seven_field_templates": [
             asdict(item) for item in dispatch_templates
+        ],
+        "dense_activation_seven_field_templates": [
+            asdict(item) for item in dense_activation_templates
         ],
         "optimizer_state_tensor_signatures": [
             asdict(item) for item in optimizer_state_signatures

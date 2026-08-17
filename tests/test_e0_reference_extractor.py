@@ -496,6 +496,35 @@ def unused():
         self.assertIn(("vocab", "V"), logits.normalized_form)
         self.assertTrue(all("input_feature" not in dict(item.normalized_form) for item in catalog))
 
+    def test_dense_activation_templates_cover_tp_and_cp(self) -> None:
+        manifest = {
+            "pes": {
+                "PE_dense": {
+                    "dtype_classes": {"param": "f16"},
+                    "grados": {"tp": 2, "cp": 2},
+                    "overrides": {"attn_backend": "flex"},
+                    "arquitectura": {"fuse_qkv": True},
+                }
+            }
+        }
+        boundary = MODULE.dense_nonattention_activation_catalog(manifest)
+        attention = MODULE.dense_attention_activation_catalog(manifest)
+        templates = MODULE.dense_activation_seven_field_templates(
+            manifest, boundary, attention
+        )
+        self.assertEqual(len(templates), 6)
+        self.assertEqual(
+            {item.communication_group for item in templates}, {"tp", "cp"}
+        )
+        cp_templates = [item for item in templates if item.communication_group == "cp"]
+        self.assertEqual(
+            {item.transition for item in cp_templates}, {"AllGather", "ReduceScatter"}
+        )
+        self.assertTrue(all(item.multiplicity == "2*L" for item in cp_templates))
+        lmhead = next(item for item in templates if item.consumer_role == "LMHead")
+        self.assertEqual(lmhead.transition, "AllGather")
+        self.assertEqual(lmhead.multiplicity, "1")
+
     def test_dense_fused_qkv_split_preserves_query_and_kv_identities(self) -> None:
         manifest = {
             "pes": {

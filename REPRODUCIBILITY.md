@@ -205,6 +205,12 @@ per logical layer: expert-count `AllToAll`, payload `Dispatch`, and result
 `ep:Shard(expert)` while remaining partial over `efsdp`. Routed payloads retain
 `Shard(routed_item)` syntactically across Dispatch/Combine; their transition is
 still observable because §1.2 changes ownership token→expert and expert→token.
+Dense activation communication is now composed into six templates. TP covers
+embedding ReduceScatter, the two identical Norm→ColLinear input AllGathers
+(collapsed to `2*L`), the two rowwise output ReduceScatters (`2*L`), and the
+final Norm→LMHead AllGather. CP contributes forward K/V AllGather and backward
+activation-cotangent ReduceScatter, both `2*L`; activation cotangents remain
+class `activation` under §1.6.6.
 
 Typical workflow:
 

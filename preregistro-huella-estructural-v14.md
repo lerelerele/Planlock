@@ -1072,6 +1072,13 @@ cobertura_posible    = 1 − FUERA_DE_PE / 30
    `Shard(routed_item)`; la transición sigue siendo observable por el cambio de
    propiedad token→experto→token definido en §1.2.
 
+   El PE dense añade seis plantillas de activación TP/CP. TP cubre el
+   ReduceScatter del embedding, los dos AllGather `Norm→ColLinear` colapsados a
+   `2·L`, los dos ReduceScatter rowwise (`2·L`) y el AllGather final
+   `Norm→LMHead`. CP aporta AllGather forward de K/V y ReduceScatter de sus
+   cotangentes, ambos `2·L`; por §1.6.6 el cotangente sigue siendo
+   `activation`.
+
    **Descomposición semántica de almacenamiento (calibración, no cierre):**
    el extractor cataloga por separado las familias lógicas de parámetros dense
    y MoE y emite para cada una la firma §1.6 completa: forma normalizada,
