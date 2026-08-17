@@ -230,6 +230,12 @@ The extractor accepts the two external mesh results with repeated
 `--mesh-report` arguments. It requires the exact dense and MoE axis sets,
 their frozen sizes, CPU/Gloo provenance, and a confirmed collective on every
 axis before reporting `CONFIRMED_CPU_GLOO_GROUPS`.
+`scripts/e0_model_config_trace.py` executes each selected registry function,
+applies the manifest parallelism overrides, and calls the real model config's
+`update_from_config()` before any device setup. At the pinned HEAD it confirms
+69 configured sharding routes for PE_dense and 107 for PE_moe. This is real
+configuration-path evidence, but explicitly not tensor execution; the full
+Trainer fake backend still requires a CUDA-capable PyTorch runtime.
 
 Typical workflow:
 
