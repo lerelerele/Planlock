@@ -1015,6 +1015,12 @@ cobertura_posible    = 1 − FUERA_DE_PE / 30
    expresiones vacías y clases fuera del vocabulario. Esto cierra las firmas de
    almacenamiento, pero todavía no las compone con productor, consumidor,
    placements y transición para formar las siete-tuplas de §1.1.
+
+   Las firmas lógicas de gradiente se derivan uno-a-uno de esas familias:
+   conservan forma, rol y multiplicidad, cambian a `clase_tensor=grad` y usan
+   exclusivamente `dtype_classes.grad_reduce` del manifiesto. Esta derivación
+   no presupone placements de entrada/salida de FSDP/HSDP; dichos placements se
+   fijan al componer las transiciones completas.
 3. **Se derivan las huellas de referencia COMPLETAS de ambos PEs** y se
    calculan allí los cuatro sub-umbrales de E6. Los casos especiales de abajo
    **no las sustituyen**.

@@ -679,6 +679,31 @@ def moe_storage_catalog(manifest: dict[str, object]) -> list[StorageSemantic]:
     ]
     validate_storage_signatures(catalog)
     return catalog
+
+
+def gradient_signature_catalog(
+    manifest: dict[str, object], parameter_catalog: list[StorageSemantic]
+) -> list[StorageSemantic]:
+    """Derive logical gradient signatures without claiming transition placements."""
+    gradients = [
+        replace(
+            item,
+            logical_parameter=f"{item.logical_parameter}::grad",
+            dtype_class=manifest["pes"][item.pe]["dtype_classes"]["grad_reduce"],
+            tensor_class="grad",
+            provenance=item.provenance
+            + (
+                "candidate manifest dtype_classes.grad_reduce",
+                "preregistration §1.6.6 parameter-gradient provenance",
+            ),
+            status="SEMANTIC_TENSOR_SIGNATURE_CATALOGED",
+        )
+        for item in parameter_catalog
+    ]
+    validate_storage_signatures(gradients)
+    return gradients
+
+
 def verify_reference(repo: Path) -> str:
     try:
         actual = subprocess.check_output(
@@ -755,6 +780,11 @@ def run(
         }
         for pe, files in PE_FILES.items()
     }
+    dense_parameters = dense_storage_catalog(manifest)
+    moe_parameters = moe_storage_catalog(manifest)
+    gradient_signatures = gradient_signature_catalog(
+        manifest, dense_parameters + moe_parameters
+    )
     return {
         "status": "PROTOTYPE_PARTIAL_CLASSIFICATION",
         "e0_closed": False,
@@ -773,7 +803,7 @@ def run(
         },
         "blocking_gaps": [
             "Candidate PE manifest is validated but not yet frozen into the preregistration.",
-            "Parameter tensor signatures are cataloged; activation, gradient, control-metadata, and optimizer-state signatures remain incomplete.",
+            "Parameter and logical gradient tensor signatures are cataloged; activation, control-metadata, and optimizer-state signatures remain incomplete.",
             "Cataloged signatures are not yet composed with producer/consumer placements and roles into all seven template fields.",
             "Framework-generated FSDP/HSDP and pipeline communications are not yet expanded into templates.",
             "Static candidates have not yet been cross-checked against runtime execution paths.",
@@ -785,10 +815,13 @@ def run(
             asdict(item) for item in framework_candidates(manifest, hsdp_trace)
         ],
         "dense_storage_semantics": [
-            asdict(item) for item in dense_storage_catalog(manifest)
+            asdict(item) for item in dense_parameters
         ],
         "moe_storage_semantics": [
-            asdict(item) for item in moe_storage_catalog(manifest)
+            asdict(item) for item in moe_parameters
+        ],
+        "gradient_tensor_signatures": [
+            asdict(item) for item in gradient_signatures
         ],
         "hsdp_runtime_crosscheck": (
             "CONFIRMED_CPU_GLOO_MECHANICS"

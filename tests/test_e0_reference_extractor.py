@@ -249,6 +249,25 @@ def unused():
         with self.assertRaisesRegex(ValueError, "repeats a known axis"):
             MODULE.validate_storage_signatures([item])
 
+    def test_gradient_signatures_preserve_form_role_and_multiplicity(self) -> None:
+        manifest = {
+            "pes": {
+                "PE_dense": {
+                    "dtype_classes": {"param": "f16", "grad_reduce": "f32"}
+                }
+            }
+        }
+        parameters = MODULE.dense_storage_catalog(manifest)
+        gradients = MODULE.gradient_signature_catalog(manifest, parameters)
+        self.assertEqual(len(gradients), len(parameters))
+        for parameter, gradient in zip(parameters, gradients, strict=True):
+            self.assertEqual(gradient.normalized_form, parameter.normalized_form)
+            self.assertEqual(gradient.role, parameter.role)
+            self.assertEqual(gradient.multiplicity, parameter.multiplicity)
+            self.assertEqual(gradient.tensor_class, "grad")
+            self.assertEqual(gradient.dtype_class, "f32")
+            self.assertEqual(gradient.logical_parameter, f"{parameter.logical_parameter}::grad")
+
 
 if __name__ == "__main__":
     unittest.main()

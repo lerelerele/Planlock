@@ -119,6 +119,12 @@ unknown or repeated known axes, empty expressions, and unsupported dtype or
 tensor classes. These are tensor signatures, not yet seven-field templates:
 producer/consumer placements and framework transitions still require semantic
 composition.
+The extractor additionally emits `gradient_tensor_signatures`. Each logical
+parameter family has one corresponding gradient family with the same semantic
+form, role, TP component, and symbolic multiplicity; its dtype is the
+manifest-frozen `grad_reduce` class and its tensor class is `grad`. This is a
+provenance-preserving signature derivation only: it does not assume the
+producer/consumer placement of an FSDP/HSDP reduction.
 
 Typical workflow:
 
