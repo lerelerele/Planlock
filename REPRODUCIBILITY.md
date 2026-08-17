@@ -199,6 +199,12 @@ physical PP ranks. Each PE emits one residual-activation `SendRecv` template
 with multiplicity `P-1`, group `pp`, and no `pp` placement. The stage producer
 is conservatively `Opaque`: the block-ending residual add is non-transparent;
 the next stage begins at `attention_norm`, so the consumer is `Norm`.
+The standard MoE dispatcher contributes three explicit seven-field templates
+per logical layer: expert-count `AllToAll`, payload `Dispatch`, and result
+`Combine`, all on `ep`. Counts move from `ep:Replicate` to
+`ep:Shard(expert)` while remaining partial over `efsdp`. Routed payloads retain
+`Shard(routed_item)` syntactically across Dispatch/Combine; their transition is
+still observable because §1.2 changes ownership token→expert and expert→token.
 
 Typical workflow:
 

@@ -1065,6 +1065,13 @@ cobertura_posible    = 1 − FUERA_DE_PE / 30
    El productor es `Opaque` porque la suma residual final no es transparente;
    el consumidor es `Norm` (`attention_norm` de la etapa siguiente).
 
+   El dispatcher estándar añade tres plantillas explícitas por capa lógica:
+   AllToAll de counts, Dispatch del payload y Combine del resultado, todas en
+   `ep`. Los counts pasan `ep↦Replicate → Shard(expert)` y siguen
+   `efsdp↦Partial(Sum)`. Dispatch/Combine conservan sintácticamente
+   `Shard(routed_item)`; la transición sigue siendo observable por el cambio de
+   propiedad token→experto→token definido en §1.2.
+
    **Descomposición semántica de almacenamiento (calibración, no cierre):**
    el extractor cataloga por separado las familias lógicas de parámetros dense
    y MoE y emite para cada una la firma §1.6 completa: forma normalizada,

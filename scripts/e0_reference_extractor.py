@@ -408,6 +408,86 @@ def pipeline_seven_field_templates(
     return templates
 
 
+def moe_dispatch_seven_field_templates(
+    manifest: dict[str, object],
+    activations: list[StorageSemantic],
+    metadata: list[StorageSemantic],
+) -> list[SevenFieldTemplate]:
+    """Compose standard EP count, dispatch, and combine communications."""
+    spec = manifest["pes"]["PE_moe"]
+    if spec["overrides"].get("moe_comm_backend") != "standard":
+        raise ValueError("dispatch templates require the standard MoE backend")
+    activation_by_name = {item.logical_parameter: item for item in activations}
+    metadata_by_name = {item.logical_parameter: item for item in metadata}
+    routed_input = activation_by_name["routed_input_RD"]
+    routed_output = activation_by_name["routed_output_RD"]
+    counts = metadata_by_name["num_local_tokens_per_expert_E"]
+    routed_placement = (
+        ("efsdp", "Shard(routed_item)"),
+        ("ep", "Shard(routed_item)"),
+    )
+    counts_input = (("efsdp", "Partial(Sum)"), ("ep", "Replicate"))
+    counts_output = (("efsdp", "Partial(Sum)"), ("ep", "Shard(expert)"))
+    provenance = (
+        "torchtitan/models/common/token_dispatcher.py::AllToAllTokenDispatcher",
+        "_token_count_exchange/_dispatch_token_exchange/_combine_token_exchange",
+        "preregistration §1.2 distribution ownership and §1.4 precedence",
+    )
+    return [
+        SevenFieldTemplate(
+            pe="PE_moe",
+            producer_role="Router",
+            producer_placement=counts_input,
+            transition="AllToAll",
+            consumer_placement=counts_output,
+            consumer_role="Dispatch",
+            tensor_signature=(
+                counts.normalized_form,
+                counts.dtype_class,
+                counts.tensor_class,
+            ),
+            communication_group="ep",
+            multiplicity="L_moe",
+            provenance=provenance,
+            status="SEVEN_FIELD_TEMPLATE_CANDIDATE",
+        ),
+        SevenFieldTemplate(
+            pe="PE_moe",
+            producer_role="Dispatch",
+            producer_placement=routed_placement,
+            transition="Dispatch",
+            consumer_placement=routed_placement,
+            consumer_role="GroupedGEMM",
+            tensor_signature=(
+                routed_input.normalized_form,
+                routed_input.dtype_class,
+                routed_input.tensor_class,
+            ),
+            communication_group="ep",
+            multiplicity="L_moe",
+            provenance=provenance,
+            status="SEVEN_FIELD_TEMPLATE_CANDIDATE",
+        ),
+        SevenFieldTemplate(
+            pe="PE_moe",
+            producer_role="GroupedGEMM",
+            producer_placement=routed_placement,
+            transition="Combine",
+            consumer_placement=routed_placement,
+            consumer_role="Combine",
+            tensor_signature=(
+                routed_output.normalized_form,
+                routed_output.dtype_class,
+                routed_output.tensor_class,
+            ),
+            communication_group="ep",
+            multiplicity="L_moe",
+            provenance=provenance,
+            status="SEVEN_FIELD_TEMPLATE_CANDIDATE",
+        ),
+    ]
+
+
 def dotted_name(node: ast.AST) -> str:
     if isinstance(node, ast.Name):
         return node.id
@@ -1488,6 +1568,9 @@ def run(
     )
     control_metadata_signatures = moe_control_metadata_catalog(manifest)
     routing_activation_signatures = moe_routing_activation_catalog(manifest)
+    dispatch_templates = moe_dispatch_seven_field_templates(
+        manifest, routing_activation_signatures, control_metadata_signatures
+    )
     dense_activation_signatures = dense_nonattention_activation_catalog(manifest)
     dense_attention_signatures = dense_attention_activation_catalog(manifest)
     mla_audit = mla_signature_audit(manifest)
@@ -1511,7 +1594,7 @@ def run(
         "blocking_gaps": [
             "Candidate PE manifest is validated but not yet frozen into the preregistration.",
             "Parameter, logical gradient, AdamW optimizer-state, standard MoE routing, and dense fused-QKV attention-boundary signatures are cataloged; attention score internals and MLA remain incomplete.",
-            "Dense FSDP/HSDP, PE_moe parameter/gradient, and pipeline stage-edge signatures are composed into seven-field candidates; non-pipeline activation transitions remain incomplete.",
+            "Dense FSDP/HSDP, PE_moe parameter/gradient, pipeline, and explicit MoE count/Dispatch/Combine signatures are composed into seven-field candidates; TP/CP activation transitions remain incomplete.",
             "Framework-generated FSDP/HSDP and pipeline communications are not yet expanded into templates.",
             "Static candidates have not yet been cross-checked against runtime execution paths.",
         ],
@@ -1541,6 +1624,9 @@ def run(
         ],
         "pipeline_seven_field_templates": [
             asdict(item) for item in pipeline_templates
+        ],
+        "moe_dispatch_seven_field_templates": [
+            asdict(item) for item in dispatch_templates
         ],
         "optimizer_state_tensor_signatures": [
             asdict(item) for item in optimizer_state_signatures

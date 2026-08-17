@@ -455,6 +455,32 @@ def unused():
         flattened = next(item for item in scores if "sorted" in item.logical_parameter)
         self.assertEqual(flattened.normalized_form, (("routed_item", "B*S*K"),))
 
+    def test_moe_dispatch_templates_preserve_semantic_ownership_transition(self) -> None:
+        manifest = {
+            "pes": {
+                "PE_moe": {
+                    "overrides": {"moe_comm_backend": "standard"},
+                    "dtype_classes": {"param": "f16"},
+                }
+            }
+        }
+        activations = MODULE.moe_routing_activation_catalog(manifest)
+        metadata = MODULE.moe_control_metadata_catalog(manifest)
+        templates = MODULE.moe_dispatch_seven_field_templates(
+            manifest, activations, metadata
+        )
+        self.assertEqual(
+            [item.transition for item in templates],
+            ["AllToAll", "Dispatch", "Combine"],
+        )
+        dispatch = templates[1]
+        self.assertEqual(dispatch.producer_placement, dispatch.consumer_placement)
+        self.assertEqual(dispatch.communication_group, "ep")
+        self.assertEqual(dispatch.tensor_signature[2], "activation")
+        counts = templates[0]
+        self.assertEqual(counts.tensor_signature[2], "control_metadata")
+        self.assertIn(("ep", "Shard(expert)"), counts.consumer_placement)
+
     def test_dense_nonattention_activations_preserve_swiglu_coefficient(self) -> None:
         manifest = {"pes": {"PE_dense": {"dtype_classes": {"param": "f16"}}}}
         catalog = MODULE.dense_nonattention_activation_catalog(manifest)
