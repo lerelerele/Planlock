@@ -255,6 +255,27 @@ def unused():
         with self.assertRaisesRegex(ValueError, "all_reduce_observed"):
             MODULE.validate_hsdp_trace(invalid)
 
+    def test_mesh_reports_require_exact_confirmed_axes(self) -> None:
+        expected = {
+            "PE_dense": {"pp": 2, "batch": 4, "loss": 8, "dp_replicate": 2, "cp": 2, "tp": 2, "fsdp": 4},
+            "PE_moe": {"pp": 2, "batch": 2, "loss": 2, "tp": 2, "ep": 2, "efsdp": 2, "fsdp": 2},
+        }
+        reports = [
+            {
+                "pe_name": pe,
+                "backend": "gloo (CPU) -- NOT NCCL/GPU",
+                "active_one_dimensional_meshes": {
+                    axis: {"size": size, "collective_confirmed": True}
+                    for axis, size in axes.items()
+                },
+            }
+            for pe, axes in expected.items()
+        ]
+        MODULE.validate_mesh_reports(reports)
+        reports[0]["active_one_dimensional_meshes"]["cp"]["collective_confirmed"] = False
+        with self.assertRaisesRegex(ValueError, "lacks confirmed size"):
+            MODULE.validate_mesh_reports(reports)
+
     def test_framework_coverage_rejects_unexpanded_event(self) -> None:
         event = MODULE.FrameworkCandidate(
             pe="PE_dense",

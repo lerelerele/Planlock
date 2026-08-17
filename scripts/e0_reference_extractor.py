@@ -962,6 +962,34 @@ def validate_hsdp_trace(trace: dict[str, object]) -> None:
             raise ValueError(f"invalid HSDP trace field {field}: {trace.get(field)!r}")
 
 
+def validate_mesh_reports(reports: list[dict[str, object]]) -> None:
+    """Validate exact CPU/Gloo mesh evidence for both frozen PE candidates."""
+    expected = {
+        "PE_dense": {
+            "pp": 2, "batch": 4, "loss": 8, "dp_replicate": 2,
+            "cp": 2, "tp": 2, "fsdp": 4,
+        },
+        "PE_moe": {
+            "pp": 2, "batch": 2, "loss": 2, "tp": 2,
+            "ep": 2, "efsdp": 2, "fsdp": 2,
+        },
+    }
+    by_pe = {report.get("pe_name"): report for report in reports}
+    if set(by_pe) != set(expected):
+        raise ValueError("mesh evidence must contain exactly PE_dense and PE_moe")
+    for pe, axes in expected.items():
+        report = by_pe[pe]
+        if not str(report.get("backend", "")).startswith("gloo (CPU)"):
+            raise ValueError(f"{pe} mesh evidence must use CPU/Gloo")
+        observed = report.get("active_one_dimensional_meshes")
+        if not isinstance(observed, dict) or set(observed) != set(axes):
+            raise ValueError(f"{pe} active meshes differ from the frozen PE")
+        for axis, size in axes.items():
+            item = observed[axis]
+            if item.get("size") != size or item.get("collective_confirmed") is not True:
+                raise ValueError(f"{pe} mesh {axis} lacks confirmed size {size}")
+
+
 def framework_candidates(
     manifest: dict[str, object], hsdp_trace: dict[str, object] | None = None
 ) -> list[FrameworkCandidate]:
@@ -1735,8 +1763,11 @@ def run(
     repo: Path,
     manifest: dict[str, object],
     hsdp_trace: dict[str, object] | None = None,
+    mesh_reports: list[dict[str, object]] | None = None,
 ) -> dict[str, object]:
     actual = verify_reference(repo)
+    if mesh_reports is not None:
+        validate_mesh_reports(mesh_reports)
     manifest_report = validate_manifest(repo, manifest)
     candidates = []
     for pe, files in PE_FILES.items():
@@ -1906,6 +1937,11 @@ def run(
             if hsdp_trace is not None
             else "NOT_PROVIDED"
         ),
+        "mesh_runtime_crosscheck": (
+            "CONFIRMED_CPU_GLOO_GROUPS"
+            if mesh_reports is not None
+            else "NOT_PROVIDED"
+        ),
         "candidates": [asdict(candidate) for candidate in candidates],
     }
 
@@ -1928,6 +1964,7 @@ def main(argv: list[str] | None = None) -> int:
         "--manifest", type=Path, default=Path("e0-manifest-candidate.json")
     )
     parser.add_argument("--hsdp-trace", type=Path)
+    parser.add_argument("--mesh-report", type=Path, nargs=2)
     parser.add_argument("--output", type=Path)
     args = parser.parse_args(argv)
     try:
@@ -1937,7 +1974,14 @@ def main(argv: list[str] | None = None) -> int:
             if args.hsdp_trace
             else None
         )
-        report = run(args.reference_repo.resolve(), manifest, hsdp_trace)
+        mesh_reports = (
+            [json.loads(path.read_text(encoding="utf-8")) for path in args.mesh_report]
+            if args.mesh_report
+            else None
+        )
+        report = run(
+            args.reference_repo.resolve(), manifest, hsdp_trace, mesh_reports
+        )
         output = external_output(args.output) if args.output else None
     except (OSError, json.JSONDecodeError, SyntaxError, UnicodeError, ValueError) as exc:
         print(f"ERROR: {exc}", file=sys.stderr)

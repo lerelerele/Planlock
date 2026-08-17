@@ -226,6 +226,10 @@ collective.
 pipeline event to at least one seven-field expansion by PE, transition, group,
 and tensor class. It fails closed on an orphan event; the pinned manifest
 reports `ALL_FRAMEWORK_EVENTS_EXPANDED`.
+The extractor accepts the two external mesh results with repeated
+`--mesh-report` arguments. It requires the exact dense and MoE axis sets,
+their frozen sizes, CPU/Gloo provenance, and a confirmed collective on every
+axis before reporting `CONFIRMED_CPU_GLOO_GROUPS`.
 
 Typical workflow:
 
