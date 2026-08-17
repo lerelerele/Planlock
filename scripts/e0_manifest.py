@@ -80,6 +80,25 @@ def default_adamw_contract(path: Path) -> dict[str, object]:
     return {"name": optimizer_name, "implementation": implementation}
 
 
+def function_parameter_default(path: Path, function_name: str, parameter: str) -> object:
+    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+    function = next(
+        (node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name == function_name),
+        None,
+    )
+    if function is None:
+        return None
+    positional = [*function.args.posonlyargs, *function.args.args]
+    positional_defaults = [None] * (len(positional) - len(function.args.defaults)) + list(function.args.defaults)
+    pairs = list(zip(positional, positional_defaults, strict=True)) + list(
+        zip(function.args.kwonlyargs, function.args.kw_defaults, strict=True)
+    )
+    for argument, default in pairs:
+        if argument.arg == parameter and isinstance(default, ast.Constant):
+            return default.value
+    return None
+
+
 def validate_partition(parts: list[list[str]], layer_count: int = 6) -> None:
     flattened = [name for part in parts for name in part]
     expected = ["tok_embeddings", *(f"layers.{i}" for i in range(layer_count)), "norm", "lm_head"]
@@ -102,6 +121,13 @@ def validate(repo: Path, manifest: dict[str, object]) -> dict[str, object]:
     )
     if optimizer_contract != {"name": "AdamW", "implementation": "fused"}:
         raise ValueError(f"unexpected default AdamW contract: {optimizer_contract}")
+    dispatcher_default = function_parameter_default(
+        repo / "torchtitan/models/deepseek_v3/__init__.py",
+        "model_registry",
+        "moe_comm_backend",
+    )
+    if dispatcher_default != "standard":
+        raise ValueError(f"unexpected DeepSeek debugmodel dispatcher: {dispatcher_default}")
 
     results = {}
     pes = manifest.get("pes")
@@ -118,6 +144,8 @@ def validate(repo: Path, manifest: dict[str, object]) -> dict[str, object]:
             raise ValueError(f"{pe_name} selected config does not use default_adamw")
         overrides = pe["overrides"]
         architecture = pe["arquitectura"]
+        if pe_name == "PE_moe" and overrides.get("moe_comm_backend") != "standard":
+            raise ValueError("PE_moe must freeze the reviewed standard dispatcher")
         if pe.get("dtype_classes") != {"param": "f16", "grad_reduce": "f32"}:
             raise ValueError(
                 f"{pe_name} must explicitly freeze bfloat16 params and float32 reductions"
@@ -201,6 +229,7 @@ def validate(repo: Path, manifest: dict[str, object]) -> dict[str, object]:
             "degrees_consistent": True,
             "architecture_consistent": True,
             "optimizer_consistent": True,
+            "dispatcher_consistent": pe_name != "PE_moe" or overrides["moe_comm_backend"] == "standard",
         }
     return {
         "status": "VALID_CANDIDATE_NOT_FROZEN",

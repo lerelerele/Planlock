@@ -1030,6 +1030,13 @@ cobertura_posible    = 1 − FUERA_DE_PE / 30
    la forma del parámetro y un estado escalar vacío; todos llevan
    `clase_tensor=optimizer_state` y rol `OptimizerUpdate`. El probe no valida
    todavía sus placements distribuidos.
+
+   Para `PE_moe` el manifiesto congela además
+   `moe_comm_backend=standard`, que selecciona `AllToAllTokenDispatcher`. Sus
+   IDs top-k, mapeo token↔routed-item, counts por experto y permutación posterior
+   se catalogan como `control_metadata/i64` con multiplicidad `L_moe`.
+   `topk_scores` queda expresamente fuera de este catálogo porque es
+   diferenciable y por §1.6.6 pertenece a `activation`.
 3. **Se derivan las huellas de referencia COMPLETAS de ambos PEs** y se
    calculan allí los cuatro sub-umbrales de E6. Los casos especiales de abajo
    **no las sustituyen**.

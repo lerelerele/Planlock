@@ -49,6 +49,18 @@ def default_adamw():
                 {"name": "AdamW", "implementation": "fused"},
             )
 
+    def test_extracts_keyword_only_function_default(self) -> None:
+        import tempfile
+
+        source = 'def model(*, backend: str = "standard"):\n    pass\n'
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "model.py"
+            path.write_text(source, encoding="utf-8")
+            self.assertEqual(
+                MODULE.function_parameter_default(path, "model", "backend"),
+                "standard",
+            )
+
 
 if __name__ == "__main__":
     unittest.main()

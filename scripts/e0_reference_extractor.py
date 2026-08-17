@@ -107,7 +107,7 @@ KNOWN_AXIS_IDENTITIES = {
 
 def validate_storage_signatures(items: list[StorageSemantic]) -> None:
     """Validate the three normative components of every §1.6 signature."""
-    allowed_dtypes = {"f16", "bf16", "f32", "f64", "int", "bool"}
+    allowed_dtypes = {"f32", "f16", "f8", "f4", "i64", "i32", "i8", "bool"}
     allowed_tensor_classes = {
         "activation", "control_metadata", "param", "grad", "optimizer_state"
     }
@@ -755,6 +755,65 @@ def optimizer_state_signature_catalog(
     return states
 
 
+def moe_control_metadata_catalog(manifest: dict[str, object]) -> list[StorageSemantic]:
+    """Catalog standard-dispatcher routing metadata with reviewed logical forms."""
+    spec = manifest["pes"]["PE_moe"]
+    if spec["overrides"].get("moe_comm_backend") != "standard":
+        raise ValueError("control metadata catalog requires the standard dispatcher")
+    common = {
+        "pe": "PE_moe",
+        "tp_placement": "NOT_COMPOSED",
+        "multiplicity": "L_moe",
+        "dtype_class": "i64",
+        "tensor_class": "control_metadata",
+        "provenance": (
+            "torchtitan/models/deepseek_v3/__init__.py::model_registry moe_comm_backend=standard",
+            "torchtitan/models/common/config_utils.py::make_token_dispatcher_config",
+            "torchtitan/models/common/token_dispatcher.py::AllToAllTokenDispatcher",
+            "preregistration §1.6.5/§1.6.6",
+        ),
+        "status": "SEMANTIC_TENSOR_SIGNATURE_CATALOGED",
+    }
+    entries = [
+        (
+            "topk_expert_ids_TK",
+            "Router",
+            (("token", "B*S"), ("topk", "K")),
+        ),
+        (
+            "token_indices_experts_sorted_N",
+            "Dispatch",
+            (("routed_item", "B*S*K"),),
+        ),
+        (
+            "num_local_tokens_per_expert_E",
+            "Dispatch",
+            (("expert", "E"),),
+        ),
+        (
+            "num_global_tokens_per_local_expert_EP_e",
+            "Dispatch",
+            (("expert", "E"),),
+        ),
+        (
+            "permuted_indices_R",
+            "Dispatch",
+            (("routed_item", "B*S*K"),),
+        ),
+    ]
+    catalog = [
+        StorageSemantic(
+            **common,
+            logical_parameter=name,
+            role=role,
+            normalized_form=form,
+        )
+        for name, role, form in entries
+    ]
+    validate_storage_signatures(catalog)
+    return catalog
+
+
 def verify_reference(repo: Path) -> str:
     try:
         actual = subprocess.check_output(
@@ -839,6 +898,7 @@ def run(
     optimizer_state_signatures = optimizer_state_signature_catalog(
         manifest, dense_parameters + moe_parameters
     )
+    control_metadata_signatures = moe_control_metadata_catalog(manifest)
     return {
         "status": "PROTOTYPE_PARTIAL_CLASSIFICATION",
         "e0_closed": False,
@@ -857,7 +917,7 @@ def run(
         },
         "blocking_gaps": [
             "Candidate PE manifest is validated but not yet frozen into the preregistration.",
-            "Parameter, logical gradient, and AdamW optimizer-state tensor signatures are cataloged; activation and control-metadata signatures remain incomplete.",
+            "Parameter, logical gradient, AdamW optimizer-state, and standard MoE routing-metadata signatures are cataloged; activation signatures remain incomplete.",
             "Cataloged signatures are not yet composed with producer/consumer placements and roles into all seven template fields.",
             "Framework-generated FSDP/HSDP and pipeline communications are not yet expanded into templates.",
             "Static candidates have not yet been cross-checked against runtime execution paths.",
@@ -879,6 +939,9 @@ def run(
         ],
         "optimizer_state_tensor_signatures": [
             asdict(item) for item in optimizer_state_signatures
+        ],
+        "control_metadata_tensor_signatures": [
+            asdict(item) for item in control_metadata_signatures
         ],
         "hsdp_runtime_crosscheck": (
             "CONFIRMED_CPU_GLOO_MECHANICS"

@@ -297,6 +297,19 @@ def unused():
         self.assertEqual(step.normalized_form, ())
         self.assertEqual(step.dtype_class, "f32")
 
+    def test_standard_moe_control_metadata_is_integer_and_nondifferentiable(self) -> None:
+        manifest = {
+            "pes": {"PE_moe": {"overrides": {"moe_comm_backend": "standard"}}}
+        }
+        catalog = MODULE.moe_control_metadata_catalog(manifest)
+        self.assertEqual(len(catalog), 5)
+        self.assertTrue(all(item.tensor_class == "control_metadata" for item in catalog))
+        self.assertTrue(all(item.dtype_class == "i64" for item in catalog))
+        topk = next(item for item in catalog if item.logical_parameter == "topk_expert_ids_TK")
+        self.assertEqual(topk.normalized_form, (("token", "B*S"), ("topk", "K")))
+        routed = [item for item in catalog if item.normalized_form == (("routed_item", "B*S*K"),)]
+        self.assertEqual(len(routed), 2)
+
 
 if __name__ == "__main__":
     unittest.main()
