@@ -211,6 +211,11 @@ embedding ReduceScatter, the two identical Norm→ColLinear input AllGathers
 final Norm→LMHead AllGather. CP contributes forward K/V AllGather and backward
 activation-cotangent ReduceScatter, both `2*L`; activation cotangents remain
 class `activation` under §1.6.6.
+PE_moe adds eight TP activation templates: embedding and pre-LMHead boundaries,
+MLA input/output for all `L` layers, dense-FFN input/output for `L_dense`, and
+shared-expert input/output for `L_moe`. Router and routed-expert boundaries
+remain sequence-sharded under EP and therefore introduce no additional TP
+collective.
 
 Typical workflow:
 

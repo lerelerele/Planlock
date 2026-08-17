@@ -1079,6 +1079,12 @@ cobertura_posible    = 1 − FUERA_DE_PE / 30
    cotangentes, ambos `2·L`; por §1.6.6 el cotangente sigue siendo
    `activation`.
 
+   `PE_moe` añade ocho plantillas TP: fronteras de embedding y pre-LMHead,
+   entrada/salida MLA para las `L` capas, entrada/salida del FFN dense para
+   `L_dense`, y entrada/salida de expertos compartidos para `L_moe`. Router y
+   expertos enrutados conservan el shard de secuencia con EP y no introducen
+   otra colectiva TP.
+
    **Descomposición semántica de almacenamiento (calibración, no cierre):**
    el extractor cataloga por separado las familias lógicas de parámetros dense
    y MoE y emite para cada una la firma §1.6 completa: forma normalizada,

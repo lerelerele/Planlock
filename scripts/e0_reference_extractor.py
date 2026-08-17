@@ -570,6 +570,69 @@ def dense_activation_seven_field_templates(
     ]
 
 
+def moe_tp_activation_seven_field_templates(
+    manifest: dict[str, object],
+    routing_activations: list[StorageSemantic],
+    mla_activations: list[StorageSemantic],
+) -> list[SevenFieldTemplate]:
+    """Compose reviewed PE_moe sequence-parallel TP transitions."""
+    spec = manifest["pes"]["PE_moe"]
+    if spec["grados"].get("tp") is None or spec["grados"].get("ep") is None:
+        raise ValueError("MoE activation templates require TP and EP")
+    routing = {item.logical_parameter: item for item in routing_activations}
+    mla = {item.logical_parameter: item for item in mla_activations}
+    residual = routing["out_BLD"]
+    if mla["layers.*.attention.wo.output"].normalized_form != residual.normalized_form:
+        raise ValueError("MLA output and MoE residual signatures must agree")
+    sp = (("dp_s", "Shard(batch)"), ("tp", "Shard(seq)"))
+    tp_replicated = (("dp_s", "Shard(batch)"), ("tp", "Replicate"))
+    tp_partial = (("dp_s", "Shard(batch)"), ("tp", "Partial(Sum)"))
+    signature = (
+        residual.normalized_form,
+        residual.dtype_class,
+        residual.tensor_class,
+    )
+    provenance = (
+        "torchtitan/models/deepseek_v3/sharding.py::_set_deepseek_v3_layer_sharding",
+        "torchtitan/models/common/moe_sharding.py::_shared_experts_sharding_configs",
+        "torchtitan/models/common/decoder_sharding.py reviewed sequence-parallel boundaries",
+        "preregistration §1.4 placement transitions",
+    )
+    specs = [
+        ("Embedding", tp_partial, "ReduceScatter", sp, "Norm", "1"),
+        ("Norm", sp, "AllGather", tp_replicated, "Attention", "L"),
+        ("RowLinear", tp_partial, "ReduceScatter", sp, "Opaque", "L"),
+        ("Norm", sp, "AllGather", tp_replicated, "ColLinear", "L_dense"),
+        ("RowLinear", tp_partial, "ReduceScatter", sp, "Opaque", "L_dense"),
+        ("MoE", sp, "AllGather", tp_replicated, "SharedExperts", "L_moe"),
+        ("RowLinear", tp_partial, "ReduceScatter", sp, "MoE", "L_moe"),
+        ("Norm", sp, "AllGather", tp_replicated, "LMHead", "1"),
+    ]
+    return [
+        SevenFieldTemplate(
+            pe="PE_moe",
+            producer_role=producer_role,
+            producer_placement=producer_placement,
+            transition=transition,
+            consumer_placement=consumer_placement,
+            consumer_role=consumer_role,
+            tensor_signature=signature,
+            communication_group="tp",
+            multiplicity=multiplicity,
+            provenance=provenance,
+            status="SEVEN_FIELD_TEMPLATE_CANDIDATE",
+        )
+        for (
+            producer_role,
+            producer_placement,
+            transition,
+            consumer_placement,
+            consumer_role,
+            multiplicity,
+        ) in specs
+    ]
+
+
 def dotted_name(node: ast.AST) -> str:
     if isinstance(node, ast.Name):
         return node.id
@@ -1660,6 +1723,9 @@ def run(
     )
     mla_audit = mla_signature_audit(manifest)
     mla_activation_signatures = moe_mla_activation_catalog(manifest)
+    moe_tp_activation_templates = moe_tp_activation_seven_field_templates(
+        manifest, routing_activation_signatures, mla_activation_signatures
+    )
     return {
         "status": "PROTOTYPE_PARTIAL_CLASSIFICATION",
         "e0_closed": False,
@@ -1679,7 +1745,7 @@ def run(
         "blocking_gaps": [
             "Candidate PE manifest is validated but not yet frozen into the preregistration.",
             "Parameter, logical gradient, AdamW optimizer-state, standard MoE routing, and dense fused-QKV attention-boundary signatures are cataloged; attention score internals and MLA remain incomplete.",
-            "Dense FSDP/HSDP, PE_moe parameter/gradient, pipeline, explicit MoE dispatch, and dense TP/CP activation signatures are composed into seven-field candidates; PE_moe TP activation transitions remain incomplete.",
+            "Dense FSDP/HSDP, PE_moe parameter/gradient, pipeline, explicit MoE dispatch, and dense plus PE_moe TP/CP activation signatures are composed into seven-field candidates.",
             "Framework-generated FSDP/HSDP and pipeline communications are not yet expanded into templates.",
             "Static candidates have not yet been cross-checked against runtime execution paths.",
         ],
@@ -1715,6 +1781,9 @@ def run(
         ],
         "dense_activation_seven_field_templates": [
             asdict(item) for item in dense_activation_templates
+        ],
+        "moe_tp_activation_seven_field_templates": [
+            asdict(item) for item in moe_tp_activation_templates
         ],
         "optimizer_state_tensor_signatures": [
             asdict(item) for item in optimizer_state_signatures

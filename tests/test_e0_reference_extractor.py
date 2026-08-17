@@ -525,6 +525,39 @@ def unused():
         self.assertEqual(lmhead.transition, "AllGather")
         self.assertEqual(lmhead.multiplicity, "1")
 
+    def test_moe_tp_activation_templates_cover_dense_and_shared_paths(self) -> None:
+        manifest = {
+            "pes": {
+                "PE_moe": {
+                    "dtype_classes": {"param": "f16"},
+                    "grados": {"tp": 2, "ep": 2},
+                    "overrides": {"moe_comm_backend": "standard"},
+                    "dimensiones_mla": {
+                        "qk_nope_head_dim": 128,
+                        "qk_rope_head_dim": 64,
+                        "v_head_dim": 128,
+                        "kv_lora_rank": 512,
+                    },
+                    "simbolos": {"Qn": 128, "Qr": 64, "Dv": 128, "Rkv": 512},
+                }
+            }
+        }
+        routing = MODULE.moe_routing_activation_catalog(manifest)
+        mla = MODULE.moe_mla_activation_catalog(manifest)
+        templates = MODULE.moe_tp_activation_seven_field_templates(
+            manifest, routing, mla
+        )
+        self.assertEqual(len(templates), 8)
+        self.assertTrue(all(item.communication_group == "tp" for item in templates))
+        self.assertEqual(
+            {item.multiplicity for item in templates},
+            {"1", "L", "L_dense", "L_moe"},
+        )
+        shared = [item for item in templates if item.multiplicity == "L_moe"]
+        self.assertEqual(
+            {item.transition for item in shared}, {"AllGather", "ReduceScatter"}
+        )
+
     def test_dense_fused_qkv_split_preserves_query_and_kv_identities(self) -> None:
         manifest = {
             "pes": {
