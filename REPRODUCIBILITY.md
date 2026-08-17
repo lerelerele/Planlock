@@ -193,6 +193,12 @@ families, and the single dense-FFN region. The manifest distinguishes
 `Fd=1024` (dense FFN) from `F=256` (expert FFN). Together with the five
 MoE-specific families, PE_moe now emits 32 FSDP seven-field candidates (16
 AllGather and 16 ReduceScatter); it has no HSDP `dp_r` transition.
+Pipeline is now composed rather than left symbolic. The manifest freezes `P`
+as the number of virtual stages (`4` dense, `2` MoE), distinct from the two
+physical PP ranks. Each PE emits one residual-activation `SendRecv` template
+with multiplicity `P-1`, group `pp`, and no `pp` placement. The stage producer
+is conservatively `Opaque`: the block-ending residual add is non-transparent;
+the next stage begins at `attention_norm`, so the consumer is `Norm`.
 
 Typical workflow:
 

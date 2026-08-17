@@ -361,6 +361,53 @@ def moe_framework_templates(
     return templates
 
 
+def pipeline_seven_field_templates(
+    manifest: dict[str, object],
+) -> list[SevenFieldTemplate]:
+    """Compose logical PP stage edges, collapsed independently of microbatches."""
+    templates = []
+    for pe, spec in manifest["pes"].items():
+        parts = spec["overrides"]["module_fqns_per_model_part"]
+        stage_count = spec["simbolos"]["P"]
+        if stage_count != len(parts) or stage_count < 2:
+            raise ValueError(f"{pe} invalid virtual pipeline stage count")
+        placement = (
+            (
+                ("dp_r", "Shard(batch)"),
+                ("dp_s", "Shard(batch)"),
+                ("cp", "Shard(seq)"),
+                ("tp", "Shard(seq)"),
+            )
+            if pe == "PE_dense"
+            else (("dp_s", "Shard(batch)"), ("tp", "Shard(seq)"))
+        )
+        templates.append(
+            SevenFieldTemplate(
+                pe=pe,
+                producer_role="Opaque",
+                producer_placement=placement,
+                transition="SendRecv",
+                consumer_placement=placement,
+                consumer_role="Norm",
+                tensor_signature=(
+                    (("batch", "B"), ("seq", "S"), ("model", "D")),
+                    spec["dtype_classes"]["param"],
+                    "activation",
+                ),
+                communication_group="pp",
+                multiplicity="P - 1",
+                provenance=(
+                    "candidate manifest module_fqns_per_model_part",
+                    "torchtitan/distributed/pipeline_parallel.py virtual stages",
+                    "transformer block residual add is non-transparent Opaque producer",
+                    "preregistration §1.4 SendRecv and §1.8 Q2",
+                ),
+                status="SEVEN_FIELD_TEMPLATE_CANDIDATE",
+            )
+        )
+    return templates
+
+
 def dotted_name(node: ast.AST) -> str:
     if isinstance(node, ast.Name):
         return node.id
@@ -1435,6 +1482,7 @@ def run(
     moe_seven_field_templates = moe_framework_templates(
         manifest, moe_parameters, gradient_signatures
     )
+    pipeline_templates = pipeline_seven_field_templates(manifest)
     optimizer_state_signatures = optimizer_state_signature_catalog(
         manifest, dense_parameters + moe_parameters
     )
@@ -1463,7 +1511,7 @@ def run(
         "blocking_gaps": [
             "Candidate PE manifest is validated but not yet frozen into the preregistration.",
             "Parameter, logical gradient, AdamW optimizer-state, standard MoE routing, and dense fused-QKV attention-boundary signatures are cataloged; attention score internals and MLA remain incomplete.",
-            "Dense FSDP/HSDP and all reviewed PE_moe parameter/gradient signatures are composed into seven-field candidates; activation and pipeline transitions remain incomplete.",
+            "Dense FSDP/HSDP, PE_moe parameter/gradient, and pipeline stage-edge signatures are composed into seven-field candidates; non-pipeline activation transitions remain incomplete.",
             "Framework-generated FSDP/HSDP and pipeline communications are not yet expanded into templates.",
             "Static candidates have not yet been cross-checked against runtime execution paths.",
         ],
@@ -1490,6 +1538,9 @@ def run(
         ],
         "moe_framework_seven_field_templates": [
             asdict(item) for item in moe_seven_field_templates
+        ],
+        "pipeline_seven_field_templates": [
+            asdict(item) for item in pipeline_templates
         ],
         "optimizer_state_tensor_signatures": [
             asdict(item) for item in optimizer_state_signatures

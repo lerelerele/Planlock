@@ -335,6 +335,7 @@ firma_tensor := (forma_normalizada, clase_dtype, clase_tensor)
 | `E` | Expertos |
 | `V` | Vocabulario |
 | `L` | Capas |
+| `P` | Etapas virtuales de pipeline fijadas por la partición |
 | `K` | Expertos seleccionados por token (top-k) |
 | `C` | Posiciones de capacidad por experto |
 | `Qn` | Componente no-posicional por cabeza de Q/K en MLA |
@@ -1057,6 +1058,12 @@ cobertura_posible    = 1 − FUERA_DE_PE / 30
    manifiesto distingue `Fd=1024` de `F=256`. Sumadas a las cinco específicas
    MoE, `PE_moe` emite 32 candidatas FSDP (16 AllGather + 16 ReduceScatter) y
    ninguna HSDP porque `dp_r=⊥`.
+
+   Pipeline se compone con `P` igual al número de etapas virtuales, no al grado
+   físico PP: `P=4` en dense y `P=2` en MoE. Cada PE produce una plantilla
+   residual `SendRecv`, grupo `pp`, multiplicidad `P-1` y sin placement `pp`.
+   El productor es `Opaque` porque la suma residual final no es transparente;
+   el consumidor es `Norm` (`attention_norm` de la etapa siguiente).
 
    **Descomposición semántica de almacenamiento (calibración, no cierre):**
    el extractor cataloga por separado las familias lógicas de parámetros dense

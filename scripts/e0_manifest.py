@@ -271,6 +271,8 @@ def validate(repo: Path, manifest: dict[str, object]) -> dict[str, object]:
                 )
         parts = overrides["module_fqns_per_model_part"]
         validate_partition(parts)
+        if symbols.get("P") != len(parts):
+            raise ValueError(f"{pe_name} P must equal the virtual pipeline stage count")
         schedule = overrides["pipeline_parallel_schedule"]
         expected_parts = overrides["pipeline_parallel_degree"] * (2 if schedule == "Interleaved1F1B" else 1)
         if len(parts) != expected_parts:

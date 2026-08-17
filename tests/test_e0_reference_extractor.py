@@ -185,6 +185,33 @@ def unused():
             all(item.status != "COMPLETE_TEMPLATE" for item in events)
         )
 
+    def test_pipeline_templates_use_virtual_stage_count_and_no_pp_placement(self) -> None:
+        base = {
+            "dtype_classes": {"param": "f16"},
+            "overrides": {"module_fqns_per_model_part": [["a"], ["b"]]},
+            "simbolos": {"P": 2},
+        }
+        manifest = {
+            "pes": {
+                "PE_dense": {
+                    **base,
+                    "overrides": {
+                        "module_fqns_per_model_part": [["a"], ["b"], ["c"], ["d"]]
+                    },
+                    "simbolos": {"P": 4},
+                },
+                "PE_moe": base,
+            }
+        }
+        templates = MODULE.pipeline_seven_field_templates(manifest)
+        self.assertEqual(len(templates), 2)
+        self.assertTrue(all(item.transition == "SendRecv" for item in templates))
+        self.assertTrue(all(item.multiplicity == "P - 1" for item in templates))
+        self.assertTrue(all(item.producer_role == "Opaque" for item in templates))
+        self.assertTrue(
+            all("pp" not in dict(item.producer_placement) for item in templates)
+        )
+
     def test_dense_fsdp_group_includes_context_parallel_axis(self) -> None:
         manifest = {
             "pes": {
