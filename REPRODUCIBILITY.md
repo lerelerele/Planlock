@@ -147,6 +147,12 @@ post-flatten token-slot mappings use calibrated `routed_item=B*S*K`.
 `moe_routing_activation_tensor_signatures` separately records full and top-k
 router scores (`f32`), reordered differentiable scores (`f32`), routed expert
 inputs/outputs (manifest low precision), and the combined `[B,S,D]` output.
+`dense_nonattention_activation_tensor_signatures` records the Llama embedding,
+per-layer norms, attention boundary output, SwiGLU projections/product, rowwise
+FFN output, final norm, and LMHead logits. It preserves the calibrated `2*L`
+coefficient for the structurally identical `w1/w3` outputs. QKV projections,
+head splits, positional tensors, and attention score/value forms are excluded
+until their attention-specific identities are decomposed.
 
 Typical workflow:
 

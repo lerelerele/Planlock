@@ -866,6 +866,56 @@ def moe_routing_activation_catalog(manifest: dict[str, object]) -> list[StorageS
     return catalog
 
 
+def dense_nonattention_activation_catalog(
+    manifest: dict[str, object],
+) -> list[StorageSemantic]:
+    """Catalog unambiguous Llama activations outside QKV/attention internals."""
+    dtype_class = manifest["pes"]["PE_dense"]["dtype_classes"]["param"]
+    common = {
+        "pe": "PE_dense",
+        "tp_placement": "NOT_COMPOSED",
+        "tensor_class": "activation",
+        "dtype_class": dtype_class,
+        "provenance": (
+            "torchtitan/models/common/decoder.py::Decoder.forward",
+            "torchtitan/models/llama3/model.py::Llama3TransformerBlock.forward",
+            "torchtitan/models/common/feed_forward.py::FeedForward.forward",
+            "preregistration §1.3/§1.6.4.B/§1.6.6",
+        ),
+        "status": "SEMANTIC_TENSOR_SIGNATURE_CATALOGED",
+    }
+    residual = (("batch", "B"), ("seq", "S"), ("model", "D"))
+    hidden = (("batch", "B"), ("seq", "S"), ("ffn_hidden", "F"))
+    entries = [
+        ("tok_embeddings.output", "Embedding", residual, "1"),
+        ("layers.*.attention_norm.output", "Norm", residual, "L"),
+        ("layers.*.attention.output", "Attention", residual, "L"),
+        ("layers.*.ffn_norm.output", "Norm", residual, "L"),
+        ("layers.*.feed_forward.{w1,w3}.output", "ColLinear", hidden, "2*L"),
+        ("layers.*.feed_forward.swiglu_product", "Opaque", hidden, "L"),
+        ("layers.*.feed_forward.w2.output", "RowLinear", residual, "L"),
+        ("norm.output", "Norm", residual, "1"),
+        (
+            "lm_head.output",
+            "LMHead",
+            (("batch", "B"), ("seq", "S"), ("vocab", "V")),
+            "1",
+        ),
+    ]
+    catalog = [
+        StorageSemantic(
+            **common,
+            logical_parameter=name,
+            role=role,
+            normalized_form=form,
+            multiplicity=multiplicity,
+        )
+        for name, role, form, multiplicity in entries
+    ]
+    validate_storage_signatures(catalog)
+    return catalog
+
+
 def verify_reference(repo: Path) -> str:
     try:
         actual = subprocess.check_output(
@@ -952,6 +1002,7 @@ def run(
     )
     control_metadata_signatures = moe_control_metadata_catalog(manifest)
     routing_activation_signatures = moe_routing_activation_catalog(manifest)
+    dense_activation_signatures = dense_nonattention_activation_catalog(manifest)
     return {
         "status": "PROTOTYPE_PARTIAL_CLASSIFICATION",
         "e0_closed": False,
@@ -970,7 +1021,7 @@ def run(
         },
         "blocking_gaps": [
             "Candidate PE manifest is validated but not yet frozen into the preregistration.",
-            "Parameter, logical gradient, AdamW optimizer-state, and standard MoE routing metadata/activation signatures are cataloged; dense and attention/MLA activation signatures remain incomplete.",
+            "Parameter, logical gradient, AdamW optimizer-state, standard MoE routing, and dense non-attention activation signatures are cataloged; QKV/attention/MLA internals remain incomplete.",
             "Cataloged signatures are not yet composed with producer/consumer placements and roles into all seven template fields.",
             "Framework-generated FSDP/HSDP and pipeline communications are not yet expanded into templates.",
             "Static candidates have not yet been cross-checked against runtime execution paths.",
@@ -998,6 +1049,9 @@ def run(
         ],
         "moe_routing_activation_tensor_signatures": [
             asdict(item) for item in routing_activation_signatures
+        ],
+        "dense_nonattention_activation_tensor_signatures": [
+            asdict(item) for item in dense_activation_signatures
         ],
         "hsdp_runtime_crosscheck": (
             "CONFIRMED_CPU_GLOO_MECHANICS"

@@ -332,6 +332,21 @@ def unused():
         flattened = next(item for item in scores if "sorted" in item.logical_parameter)
         self.assertEqual(flattened.normalized_form, (("routed_item", "B*S*K"),))
 
+    def test_dense_nonattention_activations_preserve_swiglu_coefficient(self) -> None:
+        manifest = {"pes": {"PE_dense": {"dtype_classes": {"param": "f16"}}}}
+        catalog = MODULE.dense_nonattention_activation_catalog(manifest)
+        self.assertEqual(len(catalog), 9)
+        self.assertTrue(all(item.tensor_class == "activation" for item in catalog))
+        collinear = next(item for item in catalog if "{w1,w3}" in item.logical_parameter)
+        self.assertEqual(collinear.multiplicity, "2*L")
+        self.assertEqual(
+            collinear.normalized_form,
+            (("batch", "B"), ("seq", "S"), ("ffn_hidden", "F")),
+        )
+        logits = next(item for item in catalog if item.role == "LMHead")
+        self.assertIn(("vocab", "V"), logits.normalized_form)
+        self.assertTrue(all("input_feature" not in dict(item.normalized_form) for item in catalog))
+
 
 if __name__ == "__main__":
     unittest.main()

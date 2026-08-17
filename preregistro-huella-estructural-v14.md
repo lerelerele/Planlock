@@ -1040,6 +1040,13 @@ cobertura_posible    = 1 − FUERA_DE_PE / 30
    `routed_item=B*S*K`. Las puntuaciones completas/top-k/reordenadas se
    catalogan aparte como activaciones `f32`; los payloads expertos y la salida
    combinada usan la clase de baja precisión del manifiesto.
+
+   Para `PE_dense` se catalogan además las activaciones no internas de atención:
+   embedding, normas, salida de la frontera Attention, proyecciones/producto
+   SwiGLU, salida rowwise, norma final y logits LMHead. `w1/w3` conservan la
+   multiplicidad calibrada `2·L`. QKV, separación por cabezas, posiciones y
+   tensores internos de atención quedan fuera hasta completar su descomposición
+   específica; no se sustituyen por formas residuales aproximadas.
 3. **Se derivan las huellas de referencia COMPLETAS de ambos PEs** y se
    calculan allí los cuatro sub-umbrales de E6. Los casos especiales de abajo
    **no las sustituyen**.
