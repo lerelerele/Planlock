@@ -223,6 +223,11 @@ def validate(repo: Path, manifest: dict[str, object]) -> dict[str, object]:
                 raise ValueError(
                     f"PE_moe MLA symbols do not match reviewed dimensions: {expected_mla_symbols}"
                 )
+            if (
+                symbols.get("F") != architecture.get("moe_ffn_hidden")
+                or symbols.get("Fd") != architecture.get("dense_ffn_hidden")
+            ):
+                raise ValueError("PE_moe F/Fd symbols must match MoE/dense FFN widths")
         if architecture["layers"] != 6:
             raise ValueError(f"{pe_name} candidate must use the six-layer debugmodel")
         if architecture["dense_layers"] + architecture["moe_layers"] != 6:

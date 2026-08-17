@@ -911,6 +911,49 @@ def moe_storage_catalog(manifest: dict[str, object]) -> list[StorageSemantic]:
     return catalog
 
 
+def moe_common_storage_catalog(manifest: dict[str, object]) -> list[StorageSemantic]:
+    """Catalog common/root, MLA, norm, and dense-FFN PE_moe parameters."""
+    dtype_class = manifest["pes"]["PE_moe"]["dtype_classes"]["param"]
+    common = {
+        "pe": "PE_moe",
+        "dtype_class": dtype_class,
+        "tensor_class": "param",
+    }
+    entries = [
+        ("tok_embeddings.weight", "Embedding", (("vocab", "V"), ("output_feature", "D")), "dense:{dp_s:Shard(vocab),tp:Shard(vocab)}", "1"),
+        ("norm.weight", "Norm", (("model", "D"),), "dense:{dp_s:Shard(model),tp:Replicate}", "1"),
+        ("lm_head.weight", "LMHead", (("vocab", "V"), ("input_feature", "D")), "dense:{dp_s:Shard(vocab),tp:Shard(vocab)}", "1"),
+        ("layers.*.{attention_norm,ffn_norm}.weight", "Norm", (("model", "D"),), "dense:{dp_s:Shard(model),tp:Replicate}", "2*L"),
+        ("layers.*.attention.wq.weight", "ColLinear", (("output_feature", "H*(Qn+Qr)"), ("input_feature", "D")), "dense:{dp_s:Shard(output_feature),tp:Shard(output_feature)}", "L"),
+        ("layers.*.attention.wkv_a.weight", "TPReplicatedLinear", (("output_feature", "Rkv+Qr"), ("input_feature", "D")), "dense:{dp_s:Shard(output_feature),tp:Replicate}", "L"),
+        ("layers.*.attention.kv_norm.weight", "Norm", (("kv_latent", "Rkv"),), "dense:{dp_s:Shard(kv_latent),tp:Replicate}", "L"),
+        ("layers.*.attention.wkv_b.weight", "ColLinear", (("output_feature", "H*(Qn+Dv)"), ("input_feature", "Rkv")), "dense:{dp_s:Shard(output_feature),tp:Shard(output_feature)}", "L"),
+        ("layers.*.attention.wo.weight", "RowLinear", (("output_feature", "D"), ("input_feature", "H*Dv")), "dense:{dp_s:Shard(output_feature),tp:Shard(input_feature)}", "L"),
+        ("layers.dense.*.feed_forward.{w1,w3}.weight", "ColLinear", (("output_feature", "Fd"), ("input_feature", "D")), "dense:{dp_s:Shard(output_feature),tp:Shard(output_feature)}", "2*(L-L_moe)"),
+        ("layers.dense.*.feed_forward.w2.weight", "RowLinear", (("output_feature", "D"), ("input_feature", "Fd")), "dense:{dp_s:Shard(output_feature),tp:Shard(input_feature)}", "L-L_moe"),
+    ]
+    catalog = [
+        StorageSemantic(
+            **common,
+            logical_parameter=name,
+            role=role,
+            normalized_form=form,
+            tp_placement=placement,
+            multiplicity=multiplicity,
+            provenance=(
+                "torchtitan/models/deepseek_v3/__init__.py::_debugmodel",
+                "torchtitan/models/deepseek_v3/model.py::Attention",
+                "torchtitan/models/deepseek_v3/sharding.py",
+                "preregistration §1.3 and §1.6.4.A",
+            ),
+            status="SEMANTIC_TENSOR_SIGNATURE_CATALOGED",
+        )
+        for name, role, form, placement, multiplicity in entries
+    ]
+    validate_storage_signatures(catalog)
+    return catalog
+
+
 def gradient_signature_catalog(
     manifest: dict[str, object], parameter_catalog: list[StorageSemantic]
 ) -> list[StorageSemantic]:
@@ -1380,7 +1423,9 @@ def run(
         for pe, files in PE_FILES.items()
     }
     dense_parameters = dense_storage_catalog(manifest)
-    moe_parameters = moe_storage_catalog(manifest)
+    moe_specific_parameters = moe_storage_catalog(manifest)
+    moe_common_parameters = moe_common_storage_catalog(manifest)
+    moe_parameters = moe_common_parameters + moe_specific_parameters
     gradient_signatures = gradient_signature_catalog(
         manifest, dense_parameters + moe_parameters
     )
@@ -1418,7 +1463,7 @@ def run(
         "blocking_gaps": [
             "Candidate PE manifest is validated but not yet frozen into the preregistration.",
             "Parameter, logical gradient, AdamW optimizer-state, standard MoE routing, and dense fused-QKV attention-boundary signatures are cataloged; attention score internals and MLA remain incomplete.",
-            "Dense FSDP/HSDP and reviewed MoE-specific parameter/gradient signatures are composed into seven-field candidates; common PE_moe parameters and activation transitions remain incomplete.",
+            "Dense FSDP/HSDP and all reviewed PE_moe parameter/gradient signatures are composed into seven-field candidates; activation and pipeline transitions remain incomplete.",
             "Framework-generated FSDP/HSDP and pipeline communications are not yet expanded into templates.",
             "Static candidates have not yet been cross-checked against runtime execution paths.",
         ],
@@ -1432,7 +1477,10 @@ def run(
             asdict(item) for item in dense_parameters
         ],
         "moe_storage_semantics": [
-            asdict(item) for item in moe_parameters
+            asdict(item) for item in moe_specific_parameters
+        ],
+        "moe_common_storage_semantics": [
+            asdict(item) for item in moe_common_parameters
         ],
         "gradient_tensor_signatures": [
             asdict(item) for item in gradient_signatures

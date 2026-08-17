@@ -187,8 +187,12 @@ parameter families into ten more candidates. Router/shared-expert states use
 the dense `dp_s` FSDP group while preserving their TP component; routed
 grouped-GEMM states use `efsdp` while preserving `ep:Shard(expert)`. Each
 family contributes one parameter AllGather and one gradient ReduceScatter.
-This does not yet claim the common embedding, MLA, norm, or dense-FFN parameter
-families of `PE_moe` are complete.
+`moe_common_storage_semantics` closes the former common-family omission: eleven families
+cover root embedding/norm/LMHead, paired per-layer norms, five MLA parameter
+families, and the single dense-FFN region. The manifest distinguishes
+`Fd=1024` (dense FFN) from `F=256` (expert FFN). Together with the five
+MoE-specific families, PE_moe now emits 32 FSDP seven-field candidates (16
+AllGather and 16 ReduceScatter); it has no HSDP `dp_r` transition.
 
 Typical workflow:
 

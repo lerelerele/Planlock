@@ -286,6 +286,16 @@ def unused():
         self.assertEqual(routed[0].multiplicity, "2*L_moe")
         self.assertTrue(all(item.tensor_class == "param" for item in catalog))
 
+    def test_moe_common_storage_separates_dense_ffn_width(self) -> None:
+        manifest = {"pes": {"PE_moe": {"dtype_classes": {"param": "f16"}}}}
+        catalog = MODULE.moe_common_storage_catalog(manifest)
+        self.assertEqual(len(catalog), 11)
+        dense_ffn = next(item for item in catalog if "{w1,w3}" in item.logical_parameter)
+        self.assertIn(("output_feature", "Fd"), dense_ffn.normalized_form)
+        self.assertEqual(dense_ffn.multiplicity, "2*(L-L_moe)")
+        kv_norm = next(item for item in catalog if "kv_norm" in item.logical_parameter)
+        self.assertEqual(kv_norm.normalized_form, (("kv_latent", "Rkv"),))
+
     def test_moe_framework_composes_dense_and_sparse_fsdp_templates(self) -> None:
         manifest = {
             "pes": {
@@ -295,10 +305,13 @@ def unused():
                 }
             }
         }
-        parameters = MODULE.moe_storage_catalog(manifest)
+        parameters = (
+            MODULE.moe_common_storage_catalog(manifest)
+            + MODULE.moe_storage_catalog(manifest)
+        )
         gradients = MODULE.gradient_signature_catalog(manifest, parameters)
         templates = MODULE.moe_framework_templates(manifest, parameters, gradients)
-        self.assertEqual(len(templates), 10)
+        self.assertEqual(len(templates), 32)
         self.assertEqual(
             {item.communication_group for item in templates}, {"dp_s", "efsdp"}
         )

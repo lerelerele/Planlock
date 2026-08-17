@@ -328,6 +328,7 @@ firma_tensor := (forma_normalizada, clase_dtype, clase_tensor)
 | `S` | Posiciones de secuencia |
 | `D` | Anchura del residual / modelo |
 | `F` | Anchura intermedia de FFN |
+| `Fd` | Anchura intermedia del FFN dense cuando difiere de la experta `F` |
 | `H` | Cabezas de query |
 | `Hkv` | Cabezas KV antes de repetición |
 | `Dh` | Dimensión por cabeza |
@@ -580,7 +581,7 @@ condición de payload ya la expresa `transicion != NONE`.
 ### 1.7 Multiplicidad
 
 Colapso por índice estructural repetido, con multiplicidad simbólica: `L`,
-`2·L`, `L_moe`, `2·L_moe`, `L - L_moe`, `P - 1`, `1`.
+`2·L`, `L_moe`, `2·L_moe`, `L - L_moe`, `2·(L-L_moe)`, `P - 1`, `1`.
 
 `2·L` se añadió durante E0 al descomponer el `FeedForward` SwiGLU del PE dense:
 `w1` y `w3` tienen la misma plantilla estructural en cada capa (ambos son
@@ -590,6 +591,9 @@ mantener dos claves idénticas con multiplicidad `L`.
 La misma razón exige `2·L_moe` para `w1/w3` de los expertos compartidos y
 enrutados: en cada capa MoE ambas matrices tienen la misma plantilla dentro de
 su familia densa o dispersa, respectivamente.
+
+`2·(L-L_moe)` aplica el mismo colapso a `w1/w3` de la región FFN dense del
+`PE_moe`, cuya anchura `Fd` difiere de la anchura experta `F`.
 
 Un cambio en el **valor** de un símbolo no es cambio de plan. Un cambio en la
 **expresión** sí lo es.
@@ -1046,9 +1050,13 @@ cobertura_posible    = 1 − FUERA_DE_PE / 30
    Las cinco familias específicas MoE producen diez plantillas adicionales:
    router y expertos compartidos usan FSDP `dp_s` conservando TP; los
    grouped-GEMM routed usan `efsdp` conservando `ep↦Shard(expert)`. Cada familia
-   aporta AllGather de parámetro y ReduceScatter de gradiente. Esto no declara
-   todavía completas las familias comunes de embedding, MLA, normas y FFN
-   dense del `PE_moe`.
+   aporta AllGather de parámetro y ReduceScatter de gradiente.
+
+   Once familias comunes cierran el resto: embedding/norma/LMHead,
+   normas por capa, cinco familias MLA y el FFN de la región dense. El
+   manifiesto distingue `Fd=1024` de `F=256`. Sumadas a las cinco específicas
+   MoE, `PE_moe` emite 32 candidatas FSDP (16 AllGather + 16 ReduceScatter) y
+   ninguna HSDP porque `dp_r=⊥`.
 
    **Descomposición semántica de almacenamiento (calibración, no cierre):**
    el extractor cataloga por separado las familias lógicas de parámetros dense
