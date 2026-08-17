@@ -97,6 +97,21 @@ class StorageSemantic:
     status: str
 
 
+@dataclass(frozen=True)
+class SevenFieldTemplate:
+    pe: str
+    producer_role: str
+    producer_placement: tuple[tuple[str, str], ...]
+    transition: str
+    consumer_placement: tuple[tuple[str, str], ...]
+    consumer_role: str
+    tensor_signature: tuple[tuple[tuple[str, str], ...], str, str]
+    communication_group: str
+    multiplicity: str
+    provenance: tuple[str, ...]
+    status: str
+
+
 KNOWN_AXIS_IDENTITIES = {
     "batch", "seq", "token", "query_pos", "key_pos", "model",
     "input_feature", "output_feature", "head", "kv_head", "head_dim",
@@ -134,6 +149,123 @@ def validate_storage_signatures(items: list[StorageSemantic]) -> None:
             raise ValueError(
                 f"{item.logical_parameter} has unsupported tensor class {item.tensor_class}"
             )
+
+
+def dense_tp_component(item: StorageSemantic) -> tuple[str, str]:
+    prefix = "tp:"
+    if not item.tp_placement.startswith(prefix):
+        raise ValueError(f"unsupported dense TP placement: {item.tp_placement}")
+    component = item.tp_placement[len(prefix):]
+    if component == "Replicate":
+        return ("tp", "Replicate")
+    if component.startswith("Shard(") and component.endswith(")"):
+        return ("tp", component)
+    raise ValueError(f"unsupported dense TP component: {component}")
+
+
+def dense_framework_templates(
+    manifest: dict[str, object],
+    parameters: list[StorageSemantic],
+    gradients: list[StorageSemantic],
+) -> list[SevenFieldTemplate]:
+    """Compose dense FSDP/HSDP events into the normative seven fields."""
+    spec = manifest["pes"]["PE_dense"]
+    if spec["grados"].get("dp_r") is None or spec["grados"].get("cp") is None:
+        raise ValueError("PE_dense template composition requires HSDP and CP")
+    gradient_by_parameter = {
+        item.logical_parameter.removesuffix("::grad"): item for item in gradients
+        if item.pe == "PE_dense"
+    }
+    templates: list[SevenFieldTemplate] = []
+    for parameter in parameters:
+        if parameter.pe != "PE_dense":
+            continue
+        gradient = gradient_by_parameter[parameter.logical_parameter]
+        shard_axis = parameter.normalized_form[0][0]
+        tp = dense_tp_component(parameter)
+        sharded = (
+            ("dp_r", "Replicate"),
+            ("dp_s", f"Shard({shard_axis})"),
+            ("cp", f"Shard({shard_axis})"),
+            tp,
+        )
+        gathered = (
+            ("dp_r", "Replicate"),
+            ("dp_s", "Replicate"),
+            ("cp", "Replicate"),
+            tp,
+        )
+        partial_grad = (
+            ("dp_r", "Replicate"),
+            ("dp_s", "Partial(Sum)"),
+            ("cp", "Partial(Sum)"),
+            tp,
+        )
+        hsdp_partial = (
+            ("dp_r", "Partial(Sum)"),
+            ("dp_s", f"Shard({shard_axis})"),
+            ("cp", f"Shard({shard_axis})"),
+            tp,
+        )
+        param_signature = (
+            parameter.normalized_form,
+            parameter.dtype_class,
+            parameter.tensor_class,
+        )
+        grad_signature = (
+            gradient.normalized_form,
+            gradient.dtype_class,
+            gradient.tensor_class,
+        )
+        common_provenance = parameter.provenance + (
+            "torchtitan/distributed/fsdp.py::apply_fsdp_to_decoder",
+            "torchtitan/distributed/parallel_dims.py fsdp=dp_shard*cp",
+            "real CPU/Gloo HSDP mechanics trace",
+        )
+        templates.extend(
+            (
+                SevenFieldTemplate(
+                    pe="PE_dense",
+                    producer_role="OptimizerUpdate",
+                    producer_placement=sharded,
+                    transition="AllGather",
+                    consumer_placement=gathered,
+                    consumer_role=parameter.role,
+                    tensor_signature=param_signature,
+                    communication_group="product(dp_s,cp)",
+                    multiplicity=parameter.multiplicity,
+                    provenance=common_provenance,
+                    status="SEVEN_FIELD_TEMPLATE_CANDIDATE",
+                ),
+                SevenFieldTemplate(
+                    pe="PE_dense",
+                    producer_role=parameter.role,
+                    producer_placement=partial_grad,
+                    transition="ReduceScatter",
+                    consumer_placement=sharded,
+                    consumer_role="OptimizerUpdate",
+                    tensor_signature=grad_signature,
+                    communication_group="product(dp_s,cp)",
+                    multiplicity=parameter.multiplicity,
+                    provenance=common_provenance,
+                    status="SEVEN_FIELD_TEMPLATE_CANDIDATE",
+                ),
+                SevenFieldTemplate(
+                    pe="PE_dense",
+                    producer_role=parameter.role,
+                    producer_placement=hsdp_partial,
+                    transition="AllReduce",
+                    consumer_placement=sharded,
+                    consumer_role="OptimizerUpdate",
+                    tensor_signature=grad_signature,
+                    communication_group="dp_r",
+                    multiplicity=parameter.multiplicity,
+                    provenance=common_provenance,
+                    status="SEVEN_FIELD_TEMPLATE_CANDIDATE",
+                ),
+            )
+        )
+    return templates
 
 
 def dotted_name(node: ast.AST) -> str:
@@ -1159,6 +1291,9 @@ def run(
     gradient_signatures = gradient_signature_catalog(
         manifest, dense_parameters + moe_parameters
     )
+    dense_seven_field_templates = dense_framework_templates(
+        manifest, dense_parameters, gradient_signatures
+    )
     optimizer_state_signatures = optimizer_state_signature_catalog(
         manifest, dense_parameters + moe_parameters
     )
@@ -1187,7 +1322,7 @@ def run(
         "blocking_gaps": [
             "Candidate PE manifest is validated but not yet frozen into the preregistration.",
             "Parameter, logical gradient, AdamW optimizer-state, standard MoE routing, and dense fused-QKV attention-boundary signatures are cataloged; attention score internals and MLA remain incomplete.",
-            "Cataloged signatures are not yet composed with producer/consumer placements and roles into all seven template fields.",
+            "Dense FSDP/HSDP parameter and gradient signatures are composed into seven-field candidates; MoE and activation transitions remain incomplete.",
             "Framework-generated FSDP/HSDP and pipeline communications are not yet expanded into templates.",
             "Static candidates have not yet been cross-checked against runtime execution paths.",
         ],
@@ -1205,6 +1340,9 @@ def run(
         ],
         "gradient_tensor_signatures": [
             asdict(item) for item in gradient_signatures
+        ],
+        "dense_framework_seven_field_templates": [
+            asdict(item) for item in dense_seven_field_templates
         ],
         "optimizer_state_tensor_signatures": [
             asdict(item) for item in optimizer_state_signatures

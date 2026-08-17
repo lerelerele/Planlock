@@ -173,6 +173,15 @@ dense FSDP group. At the pinned default backend, TorchTitan defines
 composite group `product(dp_s,cp)` (size four), not over `dp_s` alone. `PE_moe`
 has `cp=1`, so its dense FSDP group remains the simple `dp_s` axis; routed
 experts remain on `efsdp`.
+`dense_framework_seven_field_templates` is the first fully composed template
+set. For each of the nine dense logical parameter families it emits parameter
+AllGather (`OptimizerUpdate → operator`), gradient ReduceScatter
+(`operator → OptimizerUpdate`) over `product(dp_s,cp)`, and the HSDP gradient
+AllReduce over `dp_r`: 27 seven-field candidates total. Placements expand the
+flattened FSDP product onto both `dp_s` and `cp`, preserve the reviewed TP
+component, and use the first canonical semantic parameter axis as the FSDP
+shard identity. They remain candidates until the complete reference footprint
+and runtime-path cross-check are closed.
 
 Typical workflow:
 

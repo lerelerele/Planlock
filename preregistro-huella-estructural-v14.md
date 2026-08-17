@@ -1034,6 +1034,15 @@ cobertura_posible    = 1 − FUERA_DE_PE / 30
    grupo dense se reduce canónicamente a `dp_s`; los expertos routed usan
    `efsdp`. Esta observación motiva la gramática de grupos producto de §1.5.
 
+   **Primera composición completa de siete campos:** para cada una de las nueve
+   familias lógicas de parámetros dense se emiten AllGather de parámetro
+   (`OptimizerUpdate → rol del operador`), ReduceScatter de gradiente
+   (`rol → OptimizerUpdate`) sobre `product(dp_s,cp)` y AllReduce HSDP de
+   gradiente sobre `dp_r`: 27 plantillas candidatas. El sharding FSDP usa la
+   primera identidad semántica canónica de la forma del parámetro sobre `dp_s`
+   y `cp`; el componente TP se conserva. Siguen siendo candidatas hasta cerrar
+   la huella completa y el cruce de rutas runtime.
+
    **Descomposición semántica de almacenamiento (calibración, no cierre):**
    el extractor cataloga por separado las familias lógicas de parámetros dense
    y MoE y emite para cada una la firma §1.6 completa: forma normalizada,

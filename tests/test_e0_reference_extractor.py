@@ -243,6 +243,38 @@ def unused():
             swiglu_inputs.status, "SEMANTIC_TENSOR_SIGNATURE_CATALOGED"
         )
 
+    def test_dense_framework_composes_twenty_seven_seven_field_templates(self) -> None:
+        manifest = {
+            "pes": {
+                "PE_dense": {
+                    "dtype_classes": {"param": "f16", "grad_reduce": "f32"},
+                    "grados": {"dp_r": 2, "cp": 2},
+                }
+            }
+        }
+        parameters = MODULE.dense_storage_catalog(manifest)
+        gradients = MODULE.gradient_signature_catalog(manifest, parameters)
+        templates = MODULE.dense_framework_templates(manifest, parameters, gradients)
+        self.assertEqual(len(templates), 27)
+        self.assertEqual(
+            {item.transition for item in templates},
+            {"AllGather", "ReduceScatter", "AllReduce"},
+        )
+        all_gather = next(
+            item for item in templates
+            if item.transition == "AllGather" and item.consumer_role == "Embedding"
+        )
+        self.assertEqual(all_gather.communication_group, "product(dp_s,cp)")
+        self.assertIn(("dp_s", "Shard(vocab)"), all_gather.producer_placement)
+        self.assertIn(("cp", "Replicate"), all_gather.consumer_placement)
+        self.assertEqual(all_gather.tensor_signature[2], "param")
+        all_reduce = next(
+            item for item in templates
+            if item.transition == "AllReduce" and item.producer_role == "Embedding"
+        )
+        self.assertEqual(all_reduce.communication_group, "dp_r")
+        self.assertEqual(all_reduce.tensor_signature[2], "grad")
+
     def test_moe_storage_catalog_separates_dense_and_sparse_families(self) -> None:
         manifest = {"pes": {"PE_moe": {"dtype_classes": {"param": "f16"}}}}
         catalog = MODULE.moe_storage_catalog(manifest)
