@@ -1085,6 +1085,11 @@ cobertura_posible    = 1 − FUERA_DE_PE / 30
    expertos enrutados conservan el shard de secuencia con EP y no introducen
    otra colectiva TP.
 
+   El cruce `framework_template_coverage_audit` exige que cada evento simbólico
+   FSDP, HSDP y pipeline tenga al menos una expansión de siete campos con el
+   mismo PE, transición, grupo y clase tensorial. Un evento huérfano aborta el
+   extractor; el manifiesto fijado obtiene `ALL_FRAMEWORK_EVENTS_EXPANDED`.
+
    **Descomposición semántica de almacenamiento (calibración, no cierre):**
    el extractor cataloga por separado las familias lógicas de parámetros dense
    y MoE y emite para cada una la firma §1.6 completa: forma normalizada,

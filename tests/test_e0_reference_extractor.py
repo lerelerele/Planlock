@@ -1,5 +1,6 @@
 import ast
 import importlib.util
+import json
 import sys
 import tempfile
 import unittest
@@ -253,6 +254,44 @@ def unused():
         invalid = dict(trace, all_reduce_observed=False)
         with self.assertRaisesRegex(ValueError, "all_reduce_observed"):
             MODULE.validate_hsdp_trace(invalid)
+
+    def test_framework_coverage_rejects_unexpanded_event(self) -> None:
+        event = MODULE.FrameworkCandidate(
+            pe="PE_dense",
+            subsystem="pipeline",
+            transition="SendRecv",
+            group="pp",
+            tensor_class="activation",
+            structural_scope="pipeline_stage_edge",
+            multiplicity="P - 1",
+            provenance=("fixture",),
+            status="SYMBOLIC_FRAMEWORK_CANDIDATE",
+        )
+        with self.assertRaisesRegex(ValueError, "lack seven-field expansion"):
+            MODULE.framework_template_coverage_audit([event], [])
+
+    def test_framework_coverage_expands_all_manifest_events(self) -> None:
+        manifest = json.loads(
+            (SCRIPT.parents[1] / "e0-manifest-candidate.json").read_text()
+        )
+        events = MODULE.framework_candidates(manifest)
+        dense_parameters = MODULE.dense_storage_catalog(manifest)
+        moe_parameters = (
+            MODULE.moe_common_storage_catalog(manifest)
+            + MODULE.moe_storage_catalog(manifest)
+        )
+        gradients = MODULE.gradient_signature_catalog(
+            manifest, dense_parameters + moe_parameters
+        )
+        templates = (
+            MODULE.dense_framework_templates(manifest, dense_parameters, gradients)
+            + MODULE.moe_framework_templates(manifest, moe_parameters, gradients)
+            + MODULE.pipeline_seven_field_templates(manifest)
+        )
+        audit = MODULE.framework_template_coverage_audit(events, templates)
+        self.assertEqual(audit["status"], "ALL_FRAMEWORK_EVENTS_EXPANDED")
+        self.assertEqual(audit["covered_event_count"], audit["event_count"])
+        self.assertEqual(audit["uncovered_events"], [])
 
     def test_dense_storage_catalog_preserves_w1_w3_coefficient(self) -> None:
         manifest = {

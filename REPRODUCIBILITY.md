@@ -222,6 +222,10 @@ MLA input/output for all `L` layers, dense-FFN input/output for `L_dense`, and
 shared-expert input/output for `L_moe`. Router and routed-expert boundaries
 remain sequence-sharded under EP and therefore introduce no additional TP
 collective.
+`framework_template_coverage_audit` now joins every symbolic FSDP, HSDP, and
+pipeline event to at least one seven-field expansion by PE, transition, group,
+and tensor class. It fails closed on an orphan event; the pinned manifest
+reports `ALL_FRAMEWORK_EVENTS_EXPANDED`.
 
 Typical workflow:
 

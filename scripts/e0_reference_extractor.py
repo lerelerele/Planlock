@@ -1056,6 +1056,49 @@ def framework_candidates(
     return events
 
 
+def framework_template_coverage_audit(
+    events: list[FrameworkCandidate],
+    templates: list[SevenFieldTemplate],
+) -> dict[str, object]:
+    """Prove every symbolic framework event expands to seven-field templates."""
+    template_keys = {
+        (
+            item.pe,
+            item.transition,
+            item.communication_group,
+            item.tensor_signature[2],
+        )
+        for item in templates
+    }
+    expansions = []
+    uncovered = []
+    for event in events:
+        key = (event.pe, event.transition, event.group, event.tensor_class)
+        record = {
+            "pe": event.pe,
+            "subsystem": event.subsystem,
+            "structural_scope": event.structural_scope,
+            "transition": event.transition,
+            "group": event.group,
+            "tensor_class": event.tensor_class,
+            "scope_multiplicity": event.multiplicity,
+        }
+        if key in template_keys:
+            expansions.append(record)
+        else:
+            uncovered.append(record)
+    if uncovered:
+        raise ValueError(f"framework events lack seven-field expansion: {uncovered}")
+    return {
+        "status": "ALL_FRAMEWORK_EVENTS_EXPANDED",
+        "e0_blocking": False,
+        "event_count": len(events),
+        "covered_event_count": len(expansions),
+        "uncovered_events": [],
+        "expansions": expansions,
+    }
+
+
 def dense_storage_catalog(manifest: dict[str, object]) -> list[StorageSemantic]:
     """Catalog the unambiguous Llama3 debugmodel logical parameter families."""
     dtype_class = manifest["pes"]["PE_dense"]["dtype_classes"]["param"]
@@ -1775,6 +1818,11 @@ def run(
     moe_tp_activation_templates = moe_tp_activation_seven_field_templates(
         manifest, routing_activation_signatures, mla_activation_signatures
     )
+    framework_events = framework_candidates(manifest, hsdp_trace)
+    framework_coverage = framework_template_coverage_audit(
+        framework_events,
+        dense_seven_field_templates + moe_seven_field_templates + pipeline_templates,
+    )
     return {
         "status": "PROTOTYPE_PARTIAL_CLASSIFICATION",
         "e0_closed": False,
@@ -1795,15 +1843,14 @@ def run(
             "Candidate PE manifest is validated but not yet frozen into the preregistration.",
             "Parameter, logical gradient, AdamW optimizer-state, standard MoE routing, dense fused-QKV, and MLA attention-boundary signatures are cataloged; fused FlexAttention score/probability internals are audited as non-materialized.",
             "Dense FSDP/HSDP, PE_moe parameter/gradient, pipeline, explicit MoE dispatch, and dense plus PE_moe TP/CP activation signatures are composed into seven-field candidates.",
-            "Framework-generated FSDP/HSDP and pipeline communications are not yet expanded into templates.",
+            "All symbolic framework-generated FSDP/HSDP and pipeline events are cross-checked against seven-field template expansions.",
             "Static candidates have not yet been cross-checked against runtime execution paths.",
         ],
         "pe_summary": by_pe,
         "logical_transition_candidates": logical_transitions(candidates),
         "transition_inventory_prototype": transition_inventory(candidates),
-        "framework_transition_candidates": [
-            asdict(item) for item in framework_candidates(manifest, hsdp_trace)
-        ],
+        "framework_transition_candidates": [asdict(item) for item in framework_events],
+        "framework_template_coverage_audit": framework_coverage,
         "dense_storage_semantics": [
             asdict(item) for item in dense_parameters
         ],
