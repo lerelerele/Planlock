@@ -182,6 +182,13 @@ flattened FSDP product onto both `dp_s` and `cp`, preserve the reviewed TP
 component, and use the first canonical semantic parameter axis as the FSDP
 shard identity. They remain candidates until the complete reference footprint
 and runtime-path cross-check are closed.
+`moe_framework_seven_field_templates` composes the five reviewed MoE-specific
+parameter families into ten more candidates. Router/shared-expert states use
+the dense `dp_s` FSDP group while preserving their TP component; routed
+grouped-GEMM states use `efsdp` while preserving `ep:Shard(expert)`. Each
+family contributes one parameter AllGather and one gradient ReduceScatter.
+This does not yet claim the common embedding, MLA, norm, or dense-FFN parameter
+families of `PE_moe` are complete.
 
 Typical workflow:
 

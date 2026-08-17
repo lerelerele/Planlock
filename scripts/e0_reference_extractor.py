@@ -10,6 +10,7 @@ close E0.  Its output is an auditable work queue for the full extractor.
 import argparse
 import ast
 import json
+import re
 import subprocess
 import sys
 from dataclasses import asdict, dataclass, replace
@@ -259,6 +260,98 @@ def dense_framework_templates(
                     consumer_role="OptimizerUpdate",
                     tensor_signature=grad_signature,
                     communication_group="dp_r",
+                    multiplicity=parameter.multiplicity,
+                    provenance=common_provenance,
+                    status="SEVEN_FIELD_TEMPLATE_CANDIDATE",
+                ),
+            )
+        )
+    return templates
+
+
+def parse_moe_storage_placement(item: StorageSemantic) -> tuple[str, dict[str, str]]:
+    match = re.fullmatch(r"(dense|sparse):\{(.+)\}", item.tp_placement)
+    if match is None:
+        raise ValueError(f"unsupported MoE storage placement: {item.tp_placement}")
+    family, body = match.groups()
+    components = dict(
+        re.findall(r"([a-z_]+):(Shard\([a-z_]+\)|Replicate)", body)
+    )
+    expected = {"dp_s", "tp"} if family == "dense" else {"efsdp", "ep"}
+    if set(components) != expected:
+        raise ValueError(f"incomplete {family} MoE placement: {components}")
+    return family, components
+
+
+def moe_framework_templates(
+    manifest: dict[str, object],
+    parameters: list[StorageSemantic],
+    gradients: list[StorageSemantic],
+) -> list[SevenFieldTemplate]:
+    """Compose reviewed MoE parameter families over dense/sparse FSDP meshes."""
+    if manifest["pes"]["PE_moe"]["grados"].get("dp_r") is not None:
+        raise ValueError("PE_moe template composition does not expect HSDP")
+    gradient_by_parameter = {
+        item.logical_parameter.removesuffix("::grad"): item for item in gradients
+        if item.pe == "PE_moe"
+    }
+    templates: list[SevenFieldTemplate] = []
+    for parameter in parameters:
+        if parameter.pe != "PE_moe":
+            continue
+        gradient = gradient_by_parameter[parameter.logical_parameter]
+        family, components = parse_moe_storage_placement(parameter)
+        fsdp_axis = "dp_s" if family == "dense" else "efsdp"
+        other_axis = "tp" if family == "dense" else "ep"
+        group = fsdp_axis
+        sharded = (
+            (fsdp_axis, components[fsdp_axis]),
+            (other_axis, components[other_axis]),
+        )
+        gathered = (
+            (fsdp_axis, "Replicate"),
+            (other_axis, components[other_axis]),
+        )
+        partial = (
+            (fsdp_axis, "Partial(Sum)"),
+            (other_axis, components[other_axis]),
+        )
+        common_provenance = parameter.provenance + (
+            "torchtitan/models/common/moe_sharding.py",
+            "torchtitan/distributed/fsdp.py::apply_fsdp_to_decoder",
+        )
+        templates.extend(
+            (
+                SevenFieldTemplate(
+                    pe="PE_moe",
+                    producer_role="OptimizerUpdate",
+                    producer_placement=sharded,
+                    transition="AllGather",
+                    consumer_placement=gathered,
+                    consumer_role=parameter.role,
+                    tensor_signature=(
+                        parameter.normalized_form,
+                        parameter.dtype_class,
+                        parameter.tensor_class,
+                    ),
+                    communication_group=group,
+                    multiplicity=parameter.multiplicity,
+                    provenance=common_provenance,
+                    status="SEVEN_FIELD_TEMPLATE_CANDIDATE",
+                ),
+                SevenFieldTemplate(
+                    pe="PE_moe",
+                    producer_role=parameter.role,
+                    producer_placement=partial,
+                    transition="ReduceScatter",
+                    consumer_placement=sharded,
+                    consumer_role="OptimizerUpdate",
+                    tensor_signature=(
+                        gradient.normalized_form,
+                        gradient.dtype_class,
+                        gradient.tensor_class,
+                    ),
+                    communication_group=group,
                     multiplicity=parameter.multiplicity,
                     provenance=common_provenance,
                     status="SEVEN_FIELD_TEMPLATE_CANDIDATE",
@@ -1294,6 +1387,9 @@ def run(
     dense_seven_field_templates = dense_framework_templates(
         manifest, dense_parameters, gradient_signatures
     )
+    moe_seven_field_templates = moe_framework_templates(
+        manifest, moe_parameters, gradient_signatures
+    )
     optimizer_state_signatures = optimizer_state_signature_catalog(
         manifest, dense_parameters + moe_parameters
     )
@@ -1322,7 +1418,7 @@ def run(
         "blocking_gaps": [
             "Candidate PE manifest is validated but not yet frozen into the preregistration.",
             "Parameter, logical gradient, AdamW optimizer-state, standard MoE routing, and dense fused-QKV attention-boundary signatures are cataloged; attention score internals and MLA remain incomplete.",
-            "Dense FSDP/HSDP parameter and gradient signatures are composed into seven-field candidates; MoE and activation transitions remain incomplete.",
+            "Dense FSDP/HSDP and reviewed MoE-specific parameter/gradient signatures are composed into seven-field candidates; common PE_moe parameters and activation transitions remain incomplete.",
             "Framework-generated FSDP/HSDP and pipeline communications are not yet expanded into templates.",
             "Static candidates have not yet been cross-checked against runtime execution paths.",
         ],
@@ -1343,6 +1439,9 @@ def run(
         ],
         "dense_framework_seven_field_templates": [
             asdict(item) for item in dense_seven_field_templates
+        ],
+        "moe_framework_seven_field_templates": [
+            asdict(item) for item in moe_seven_field_templates
         ],
         "optimizer_state_tensor_signatures": [
             asdict(item) for item in optimizer_state_signatures

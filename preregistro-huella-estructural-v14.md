@@ -1043,6 +1043,13 @@ cobertura_posible    = 1 − FUERA_DE_PE / 30
    y `cp`; el componente TP se conserva. Siguen siendo candidatas hasta cerrar
    la huella completa y el cruce de rutas runtime.
 
+   Las cinco familias específicas MoE producen diez plantillas adicionales:
+   router y expertos compartidos usan FSDP `dp_s` conservando TP; los
+   grouped-GEMM routed usan `efsdp` conservando `ep↦Shard(expert)`. Cada familia
+   aporta AllGather de parámetro y ReduceScatter de gradiente. Esto no declara
+   todavía completas las familias comunes de embedding, MLA, normas y FFN
+   dense del `PE_moe`.
+
    **Descomposición semántica de almacenamiento (calibración, no cierre):**
    el extractor cataloga por separado las familias lógicas de parámetros dense
    y MoE y emite para cada una la firma §1.6 completa: forma normalizada,

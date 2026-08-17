@@ -286,6 +286,36 @@ def unused():
         self.assertEqual(routed[0].multiplicity, "2*L_moe")
         self.assertTrue(all(item.tensor_class == "param" for item in catalog))
 
+    def test_moe_framework_composes_dense_and_sparse_fsdp_templates(self) -> None:
+        manifest = {
+            "pes": {
+                "PE_moe": {
+                    "dtype_classes": {"param": "f16", "grad_reduce": "f32"},
+                    "grados": {"dp_r": None},
+                }
+            }
+        }
+        parameters = MODULE.moe_storage_catalog(manifest)
+        gradients = MODULE.gradient_signature_catalog(manifest, parameters)
+        templates = MODULE.moe_framework_templates(manifest, parameters, gradients)
+        self.assertEqual(len(templates), 10)
+        self.assertEqual(
+            {item.communication_group for item in templates}, {"dp_s", "efsdp"}
+        )
+        router = next(
+            item for item in templates
+            if item.transition == "AllGather" and item.consumer_role == "Router"
+        )
+        self.assertEqual(router.communication_group, "dp_s")
+        self.assertIn(("tp", "Replicate"), router.consumer_placement)
+        grouped = next(
+            item for item in templates
+            if item.transition == "AllGather" and item.consumer_role == "GroupedGEMM"
+        )
+        self.assertEqual(grouped.communication_group, "efsdp")
+        self.assertIn(("ep", "Shard(expert)"), grouped.consumer_placement)
+        self.assertEqual(grouped.tensor_signature[2], "param")
+
     def test_storage_signature_rejects_repeated_known_axis(self) -> None:
         item = MODULE.StorageSemantic(
             pe="PE_dense",
