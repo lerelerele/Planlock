@@ -496,6 +496,9 @@ def framework_candidates(
         architecture = spec["arquitectura"]
         dense_layers = architecture["dense_layers"]
         moe_layers = architecture["moe_layers"]
+        dense_fsdp_group = (
+            "product(dp_s,cp)" if spec["grados"].get("cp") is not None else "dp_s"
+        )
         fsdp_scopes = [
             ("decoder_root_input_output", "1"),
             ("decoder_nonexpert_layer", "L"),
@@ -503,7 +506,7 @@ def framework_candidates(
         if moe_layers:
             fsdp_scopes.append(("routed_expert", "L_moe"))
         for scope, multiplicity in fsdp_scopes:
-            group = "efsdp" if scope == "routed_expert" else "dp_s"
+            group = "efsdp" if scope == "routed_expert" else dense_fsdp_group
             for transition, tensor_class in (
                 ("AllGather", "param"),
                 ("ReduceScatter", "grad"),
@@ -519,6 +522,7 @@ def framework_candidates(
                         multiplicity=multiplicity,
                         provenance=(
                             "torchtitan/distributed/fsdp.py::apply_fsdp_to_decoder",
+                            "torchtitan/distributed/parallel_dims.py fsdp=dp_shard*cp",
                             "§1.4 Partial/Shard/Replicate transition guards",
                             "§1.6.6 parameter-gradient provenance",
                         ),

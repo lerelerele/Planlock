@@ -274,7 +274,16 @@ el código lo llame `all_to_all`.
 
 ### 1.5 Placements y grupos
 
-**Grupos de comunicación:** `dp_r`, `dp_s`, `efsdp`, `tp`, `ep`, `cp`, `pp`.
+**Grupos de comunicación:** un eje simple entre `dp_r`, `dp_s`, `efsdp`, `tp`,
+`ep`, `cp`, `pp`, o un producto canónico ordenado de ejes simples:
+
+```
+grupo_comunicacion := eje | product(eje_1,...,eje_n)
+```
+
+Un producto se serializa en el orden de la malla declarada, sin duplicados, y
+solo cuando el HEAD construye una malla unidimensional aplanando esos ejes. No
+autoriza a fusionar grupos por conveniencia analítica.
 
 ```
 Placement :=
@@ -1018,6 +1027,12 @@ cobertura_posible    = 1 − FUERA_DE_PE / 30
    candidato HSDP de `PE_dense` necesita una transición `AllReduce` sobre
    `dp_r`, además de las transiciones FSDP sobre `dp_s`. No determina todavía
    roles, firmas tensoriales ni multiplicidades completas, y no es NCCL/GPU.
+
+   **Corrección del grupo FSDP dense:** el backend fijado construye
+   `fsdp=dp_shard·cp`; en `PE_dense` la colectiva observable usa por tanto
+   `product(dp_s,cp)` de tamaño 4, no `dp_s` aislado. En `PE_moe`, `cp=1` y el
+   grupo dense se reduce canónicamente a `dp_s`; los expertos routed usan
+   `efsdp`. Esta observación motiva la gramática de grupos producto de §1.5.
 
    **Descomposición semántica de almacenamiento (calibración, no cierre):**
    el extractor cataloga por separado las familias lógicas de parámetros dense

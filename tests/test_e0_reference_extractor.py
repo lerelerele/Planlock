@@ -185,6 +185,27 @@ def unused():
             all(item.status != "COMPLETE_TEMPLATE" for item in events)
         )
 
+    def test_dense_fsdp_group_includes_context_parallel_axis(self) -> None:
+        manifest = {
+            "pes": {
+                "PE_dense": {
+                    "overrides": {"module_fqns_per_model_part": [["a"]]},
+                    "arquitectura": {"layers": 1, "dense_layers": 1, "moe_layers": 0},
+                    "grados": {"dp_r": 2, "cp": 2},
+                },
+                "PE_moe": {
+                    "overrides": {"module_fqns_per_model_part": [["a"]]},
+                    "arquitectura": {"layers": 1, "dense_layers": 1, "moe_layers": 0},
+                    "grados": {"dp_r": None, "cp": None},
+                },
+            }
+        }
+        events = MODULE.framework_candidates(manifest)
+        dense_fsdp = [item for item in events if item.pe == "PE_dense" and item.subsystem == "fsdp"]
+        moe_fsdp = [item for item in events if item.pe == "PE_moe" and item.subsystem == "fsdp"]
+        self.assertTrue(all(item.group == "product(dp_s,cp)" for item in dense_fsdp))
+        self.assertTrue(all(item.group == "dp_s" for item in moe_fsdp))
+
     def test_valid_hsdp_trace_confirms_mechanics_only(self) -> None:
         trace = {
             "status": "REAL_CPU_GLOO_HSDP_MECHANICS_ONLY",

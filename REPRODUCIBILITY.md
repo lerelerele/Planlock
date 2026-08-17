@@ -167,6 +167,12 @@ symbols `Qn`, `Qr`, `Dv`, `Rkv` and semantic identities `kv_latent` and
 `Rkv`, and the flattened pre-`wo` output uses `H*Dv`. The audit now reports
 `MLA_VOCABULARY_SUFFICIENT`, and `moe_mla_activation_tensor_signatures` emits
 14 reviewed families without `axis_opaque`.
+Before composing seven-field templates, the framework audit also corrected the
+dense FSDP group. At the pinned default backend, TorchTitan defines
+`fsdp=dp_shard*cp`; therefore `PE_dense` communicates over the canonical
+composite group `product(dp_s,cp)` (size four), not over `dp_s` alone. `PE_moe`
+has `cp=1`, so its dense FSDP group remains the simple `dp_s` axis; routed
+experts remain on `efsdp`.
 
 Typical workflow:
 
