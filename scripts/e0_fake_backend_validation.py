@@ -144,6 +144,24 @@ def run_candidate(
     combined = result.stdout + result.stderr
     completed = "Training completed" in combined
     mesh_built = "Building device mesh with parallelism:" in combined
+    fake_pp_dynamic_shape_block = (
+        "requires dynamic shape inference, which is not supported with a fake process group"
+        in combined
+    )
+    if result.returncode != 0 and mesh_built and fake_pp_dynamic_shape_block:
+        return {
+            "status": "BLOCKED_FAKE_BACKEND_PIPELINE_DYNAMIC_SHAPES",
+            "world_size": size,
+            "returncode": result.returncode,
+            "duration_seconds": round(time.monotonic() - started, 3),
+            "mesh_built": True,
+            "training_completed": False,
+            "blocker": (
+                "Torch distributed pipelining cannot infer dynamic stage shapes "
+                "with a fake process group"
+            ),
+            "log_tail": combined[-4000:],
+        }
     if result.returncode != 0 or not completed or not mesh_built:
         raise RuntimeError(
             f"{pe_name} fake_backend run failed: returncode={result.returncode}, "
@@ -177,8 +195,13 @@ def run(
         name: run_candidate(reference_repo, name, manifest["pes"][name], timeout)
         for name in selected
     }
+    all_completed = all(report["training_completed"] for report in reports.values())
     return {
-        "status": "CONFIRMED_CUDA_FAKE_BACKEND",
+        "status": (
+            "CONFIRMED_CUDA_FAKE_BACKEND"
+            if all_completed
+            else "BLOCKED_FAKE_BACKEND_PIPELINE_DYNAMIC_SHAPES"
+        ),
         "reference_sha": actual,
         "manifest_sha256": hashlib.sha256(canonical_bytes(manifest)).hexdigest(),
         "runtime": probe,
@@ -186,6 +209,7 @@ def run(
         "fake_world_sizes": {name: report["world_size"] for name, report in reports.items()},
         "nccl_collectives_validated": False,
         "physical_multi_gpu_validated": False,
+        "training_completed": all_completed,
         "e0_closed": False,
         "pes": reports,
     }

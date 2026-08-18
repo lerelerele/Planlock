@@ -50,6 +50,21 @@ class FakeBackendValidationTests(unittest.TestCase):
         command = run.call_args.args[0]
         self.assertIn("--training.disable_cuda_graphs", command)
 
+    @patch.object(MODULE.subprocess, "run")
+    def test_classifies_known_fake_pipeline_shape_blocker(self, run) -> None:
+        run.return_value.returncode = 1
+        run.return_value.stdout = "Building device mesh with parallelism:\n"
+        run.return_value.stderr = (
+            "Stage 0 requires dynamic shape inference, which is not supported "
+            "with a fake process group."
+        )
+        report = MODULE.run_candidate(Path("repo"), "PE_dense", self.pe, 60)
+        self.assertEqual(
+            report["status"], "BLOCKED_FAKE_BACKEND_PIPELINE_DYNAMIC_SHAPES"
+        )
+        self.assertTrue(report["mesh_built"])
+        self.assertFalse(report["training_completed"])
+
     def test_rejects_output_inside_checkout(self) -> None:
         with self.assertRaisesRegex(ValueError, "outside"):
             MODULE.external_output(SCRIPT.parent / "report.json")
@@ -75,6 +90,7 @@ class FakeBackendValidationTests(unittest.TestCase):
         run_candidate.return_value = {
             "status": "CONFIRMED_CUDA_FAKE_BACKEND",
             "world_size": 32,
+            "training_completed": True,
         }
         manifest = {
             "reference_sha": MODULE.REFERENCE_SHA,
@@ -84,6 +100,31 @@ class FakeBackendValidationTests(unittest.TestCase):
         self.assertFalse(report["nccl_collectives_validated"])
         self.assertFalse(report["physical_multi_gpu_validated"])
         self.assertFalse(report["e0_closed"])
+
+    @patch.object(MODULE, "run_candidate")
+    @patch.object(
+        MODULE,
+        "cuda_probe",
+        return_value={"cuda_available": True, "device_count": 1, "device_name": "GPU"},
+    )
+    @patch.object(MODULE, "git_state", return_value=MODULE.REFERENCE_SHA)
+    def test_top_level_report_preserves_pipeline_blocker(
+        self, _git_state, _cuda_probe, run_candidate
+    ) -> None:
+        run_candidate.return_value = {
+            "status": "BLOCKED_FAKE_BACKEND_PIPELINE_DYNAMIC_SHAPES",
+            "world_size": 32,
+            "training_completed": False,
+        }
+        manifest = {
+            "reference_sha": MODULE.REFERENCE_SHA,
+            "pes": {"PE_dense": self.pe},
+        }
+        report = MODULE.run(Path("repo"), manifest, ("PE_dense",))
+        self.assertEqual(
+            report["status"], "BLOCKED_FAKE_BACKEND_PIPELINE_DYNAMIC_SHAPES"
+        )
+        self.assertFalse(report["training_completed"])
 
 
 if __name__ == "__main__":

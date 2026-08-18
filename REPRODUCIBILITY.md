@@ -247,6 +247,12 @@ finishes successfully for every selected PE. The harness disables CUDA Graphs
 because the pinned TorchTitan SHA rejects them when pipeline parallelism is
 active.
 
+The pinned stack may instead stop after CUDA mesh/model initialization with
+`BLOCKED_FAKE_BACKEND_PIPELINE_DYNAMIC_SHAPES`: PyTorch's pipeline scheduler
+cannot dynamically infer stage metadata through a fake process group. This is
+a known, structured partial result, not a successful training step. The harness
+records it for every PE and never promotes it to `CONFIRMED_CUDA_FAKE_BACKEND`.
+
 ```text
 python scripts/e0_fake_backend_validation.py \
   --reference-repo <pinned-torchtitan-checkout> \
