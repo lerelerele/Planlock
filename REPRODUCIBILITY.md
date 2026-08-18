@@ -252,6 +252,10 @@ The pinned stack may instead stop after CUDA mesh/model initialization with
 cannot dynamically infer stage metadata through a fake process group. This is
 a known, structured partial result, not a successful training step. The harness
 records it for every PE and never promotes it to `CONFIRMED_CUDA_FAKE_BACKEND`.
+The observed 2026-08-18 run is summarized without local paths or stack traces
+in `e0-cuda-fake-backend-evidence.json`; that record pins the SHA-256 of the
+external raw report and is checked against the candidate manifest by the test
+suite.
 
 ```text
 python scripts/e0_fake_backend_validation.py \

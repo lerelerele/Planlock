@@ -1,0 +1,40 @@
+{
+  "schema_version": 1,
+  "observed_on": "2026-08-18",
+  "status": "BLOCKED_FAKE_BACKEND_PIPELINE_DYNAMIC_SHAPES",
+  "source_artifact": {
+    "storage": "external",
+    "sha256": "80c136d8895da3505c64afde1992d60b4a92517966ea23b00a573cf0fa3d9faa"
+  },
+  "reference_sha": "9a711521ac2973fe230a3f38efc6aedfc7d1f9c6",
+  "manifest_sha256": "5fab96c2a14b9858179082ca7f5a26ebe6bc051f08da4c1d7d98d24fee357af2",
+  "runtime": {
+    "torch": "2.15.0.dev20260817+cu130",
+    "cuda_available": true,
+    "physical_gpu_count_used": 1,
+    "device_name": "NVIDIA GeForce RTX 5080"
+  },
+  "pes": {
+    "PE_dense": {
+      "fake_world_size": 32,
+      "mesh_built": true,
+      "training_completed": false,
+      "status": "BLOCKED_FAKE_BACKEND_PIPELINE_DYNAMIC_SHAPES"
+    },
+    "PE_moe": {
+      "fake_world_size": 8,
+      "mesh_built": true,
+      "training_completed": false,
+      "status": "BLOCKED_FAKE_BACKEND_PIPELINE_DYNAMIC_SHAPES"
+    }
+  },
+  "blocker": "Torch distributed pipelining cannot infer dynamic stage shapes with a fake process group",
+  "claims": {
+    "cuda_initialization_confirmed": true,
+    "manifest_mesh_construction_confirmed": true,
+    "training_step_confirmed": false,
+    "nccl_collectives_validated": false,
+    "physical_multi_gpu_validated": false,
+    "e0_closed": false
+  }
+}

@@ -1015,6 +1015,21 @@ cobertura_posible    = 1 − FUERA_DE_PE / 30
      `fsdp`(4). Coincide con `dp_r`, `cp`, `tp`, `pp` de la tabla; `ep` está en
      `⊥` y correctamente ausente.
 
+   **Evidencia CUDA/fake-backend adicional (calibración, no cierre de E0):**
+   el 2026-08-18, `scripts/e0_fake_backend_validation.py` ejecutó ambos PEs
+   contra el mismo HEAD y manifiesto en una NVIDIA GeForce RTX 5080 con
+   PyTorch `2.15.0.dev20260817+cu130`. Las mallas completas se construyeron
+   para `PE_dense` (world size falso 32) y `PE_moe` (world size falso 8), pero
+   ambos runs se detuvieron antes del primer paso: el scheduler de Pipeline
+   Parallel no admite inferencia dinámica de metadatos de etapa con un fake
+   process group. Estado:
+   `BLOCKED_FAKE_BACKEND_PIPELINE_DYNAMIC_SHAPES`. El resumen sanitizado está
+   en `e0-cuda-fake-backend-evidence.json`; el artefacto externo bruto tiene
+   SHA-256
+   `80c136d8895da3505c64afde1992d60b4a92517966ea23b00a573cf0fa3d9faa`.
+   Esto confirma inicialización CUDA y construcción de mallas, no entrenamiento,
+   colectivas NCCL ni multi-GPU físico; `e0_closed` permanece en `false`.
+
    **Resuelve la atención al eje `cp`:** bajo `spmd_backend="default"`, `cp`
    **sí** forma su propia malla unidimensional con grupo de comunicación real
    (`dataloading_mesh["cp"]`), independiente de que además participe,
