@@ -271,6 +271,34 @@ or communication timing, and the generated report always records
 `e0_closed: false`. It is a fail-closed bridge between the existing CPU/Gloo
 mechanics evidence and the still-required real multi-GPU/NCCL validation.
 
+### Eight-GPU physical NCCL validation
+
+`scripts/e0_nccl_validation.py` is the fail-closed physical follow-up for
+`PE_moe`. It requires a clean TorchTitan checkout at the pinned SHA and exactly
+eight visible CUDA devices. Before training it launches eight real processes,
+binds one process to each GPU, and requires an NCCL AllReduce of rank values
+`1..8` to produce exactly `36`. Only then does it execute the frozen PE_moe
+configuration for one Trainer step. The report records the Planlock commit,
+manifest digest, CUDA/NCCL versions, GPU UUID inventory, topology, and bounded
+log tails. A successful PE_moe result still records `e0_closed: false`, because
+it does not validate the 32-GPU `PE_dense` candidate.
+
+For a fresh eight-GPU rental, clone Planlock and run the bootstrap from that
+clean checkout:
+
+```text
+git clone https://github.com/lerelerele/Planlock.git
+cd Planlock
+bash scripts/e0_vast_bootstrap.sh
+```
+
+The bootstrap creates `~/planlock-e0-rental`, installs PyTorch nightly CUDA 13
+and the pinned TorchTitan dependencies in an isolated virtual environment, and
+writes the raw report under `~/planlock-e0-rental/evidence`. Both locations can
+be overridden with environment variables. Start billing only after this commit
+is present on `origin/main`, use an on-demand eight-GPU instance, and destroy
+the rental after copying the report and its printed SHA-256 digest.
+
 Typical workflow:
 
 ```text
