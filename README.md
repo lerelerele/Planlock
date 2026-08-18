@@ -4,7 +4,15 @@
 
 ---
 
-> **Status: not implemented.** `planlock` is gated on a preregistered falsification study that tests whether its core abstraction — a structural fingerprint of the communication plan — survives ordinary refactors of a real codebase. If the fingerprint is unstable, the project is abandoned rather than repaired. Nothing below has shipped. See [Status and validation](#status-and-validation) and the [preregistration](preregistro-huella-estructural-v14.md).
+> **Status: study instrumentation implemented; `planlock` itself is not.**
+> The project remains gated on a preregistered falsification study that tests
+> whether its core abstraction — a structural fingerprint of the communication
+> plan — survives ordinary refactors of a real codebase. If the fingerprint is
+> unstable, the project is abandoned rather than repaired. The API and CLI
+> shown below are still a proposal, not shipped software. See
+> [Status and validation](#status-and-validation), the
+> [preregistration](preregistro-huella-estructural-v14.md), and the current
+> [reproducibility record](REPRODUCIBILITY.md).
 
 `scripts/` contains instrumentation for the falsification study, not the
 `planlock` tool itself. Its sealed outputs must be generated outside this Git
@@ -20,7 +28,7 @@ Commit the snapshot. `planlock` fails CI when a change introduces a new collecti
 
 Every finding carries its epistemic status. An observation is never phrased as a guarantee.
 
-## Quick start
+## Proposed API (not yet available)
 
 ```python
 from planlock import CommPlanMode
@@ -238,7 +246,21 @@ Declared topology is not trusted on its own. A probe runs the real collectives o
 
 ## Status and validation
 
-Nothing here is built. The order of work is deliberately inverted from the usual one:
+The `planlock` package, CLI, and CI gate are not built. The E0 study
+instrumentation is built and tested; its current boundary is:
+
+- The candidate manifest is bound to TorchTitan commit
+  `9a711521ac2973fe230a3f38efc6aedfc7d1f9c6`.
+- CPU/Gloo and CUDA fake-backend calibration are recorded without being
+  misrepresented as physical NCCL validation.
+- `PE_moe` has completed a physical eight-GPU NCCL probe and Trainer step. The
+  sanitized record is [`e0-nccl-pe-moe-evidence.json`](e0-nccl-pe-moe-evidence.json).
+- The four-node, 32-GPU `PE_dense` validator is implemented and tested, but has
+  not yet been executed on physical hardware.
+- Therefore **E0 remains open**. There is no signed `prereg-v14` tag and no
+  claim that the falsification study has started.
+
+The order of work remains deliberately inverted from the usual one:
 
 1. **Falsification first.** A preregistered blind study takes hard negatives from a real repository refactors that touch parallelization code, rename modules, or rewrite a block's forward path without changing the plan and tests whether the structural fingerprint stays identical across them. The specification is frozen and hashed before any pull request is opened. One false positive traced to intrinsic instability ends the project.
 2. **Churn measurement.** If routine refactors move the fingerprint, `planlock` is worthless regardless of what else it catches. A tool whose baseline needs approving every week is a tool that gets switched off.
