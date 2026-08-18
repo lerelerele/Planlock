@@ -237,6 +237,28 @@ applies the manifest parallelism overrides, and calls the real model config's
 configuration-path evidence, but explicitly not tensor execution; the full
 Trainer fake backend still requires a CUDA-capable PyTorch runtime.
 
+`scripts/e0_fake_backend_validation.py` is the CUDA follow-up harness. It
+requires a clean checkout at the manifest's pinned SHA, probes CUDA in the same
+Python environment, constructs each PE directly from the frozen manifest, and
+runs one real Trainer step with TorchTitan's `comm.mode=fake_backend`. Reports
+must be written outside this checkout and are only labelled
+`CONFIRMED_CUDA_FAKE_BACKEND` after the device mesh is built and training
+finishes successfully for every selected PE.
+
+```text
+python scripts/e0_fake_backend_validation.py \
+  --reference-repo <pinned-torchtitan-checkout> \
+  --manifest e0-manifest-candidate.json \
+  --output <external-output>/e0-fake-backend.json
+```
+
+The fake backend uses one physical CUDA device while emulating the manifest
+world sizes (32 for PE_dense and 8 for PE_moe). Consequently, this evidence
+does **not** validate physical multi-GPU execution, NCCL collectives, bandwidth,
+or communication timing, and the generated report always records
+`e0_closed: false`. It is a fail-closed bridge between the existing CPU/Gloo
+mechanics evidence and the still-required real multi-GPU/NCCL validation.
+
 Typical workflow:
 
 ```text
