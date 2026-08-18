@@ -307,6 +307,59 @@ The eight-rank NCCL probe reduced rank values `1..8` to `36`, and the frozen
 This confirms physical NCCL execution for `PE_moe`, but not the 32-GPU
 `PE_dense` candidate, so `e0_closed` remains `false`.
 
+### Thirty-two-GPU multi-node PE_dense validation
+
+`scripts/e0_dense_multinode_validation.py` is the fail-closed physical
+follow-up for `PE_dense`. It requires exactly four nodes with eight visible
+CUDA devices each, a private address for node 0 reachable from every node, and
+the same clean Planlock and pinned TorchTitan checkouts everywhere. It first
+runs a 32-rank NCCL probe, gathers hostname/GPU UUID metadata for every rank,
+and requires the reduction of rank values `1..32` to equal `528`. Only after
+that probe succeeds does it run one frozen `PE_dense` Trainer step.
+
+The validator also verifies `e0-nccl-pe-moe-evidence.json` against the same
+manifest digest and reference SHA. It can set `e0_closed: true` only when the
+new physical `PE_dense` run succeeds and the prior physical `PE_moe` evidence
+is valid. Only node 0 writes the final report; worker nodes return their local
+status without creating competing artifacts.
+
+Before starting billable nodes, make this commit available on every node. The
+cluster must permit private TCP traffic to the rendezvous port (default
+`29500`) and NCCL traffic between nodes. Prefer the provider's private
+high-speed interface; do not expose the rendezvous port to the public Internet.
+
+On all four nodes, clone the same Planlock commit and start the bootstrap at
+approximately the same time. Use the private address of node 0 and assign each
+node one unique rank:
+
+```text
+git clone https://github.com/lerelerele/Planlock.git
+cd Planlock
+
+export NNODES=4
+export NPROC_PER_NODE=8
+export MASTER_ADDR=<private-address-of-node-0>
+export MASTER_PORT=29500
+export NODE_RANK=<0-or-1-or-2-or-3>
+export NETWORK_INTERFACE=<private-network-interface>
+bash scripts/e0_dense_multinode_bootstrap.sh
+```
+
+`NETWORK_INTERFACE` is optional when the provider configures NCCL routing
+correctly. The bootstrap uses a separate node-local work directory per rank,
+installs the pinned runtime, and joins two distinct rendezvous sessions: one
+for the NCCL probe and one for training. On node 0 the resulting raw report is
+written to:
+
+```text
+~/planlock-e0-dense-evidence/e0-nccl-pe-dense.json
+```
+
+Copy that report and verify its printed SHA-256 before destroying all four
+nodes. A missing rank, wrong GPU count, failed AllReduce, failed Trainer step,
+dirty checkout, mismatched manifest, or invalid prior `PE_moe` evidence leaves
+E0 open and returns a nonzero status.
+
 Typical workflow:
 
 ```text
