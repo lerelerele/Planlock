@@ -299,6 +299,14 @@ be overridden with environment variables. Start billing only after this commit
 is present on `origin/main`, use an on-demand eight-GPU instance, and destroy
 the rental after copying the report and its printed SHA-256 digest.
 
+The 2026-08-18 physical run completed on eight NVIDIA GeForce RTX 4090 GPUs.
+The eight-rank NCCL probe reduced rank values `1..8` to `36`, and the frozen
+`PE_moe` Trainer run completed its step. The sanitized record is
+`e0-nccl-pe-moe-evidence.json`; it pins the external raw report by SHA-256
+`c43f9688c9d5ee7b7a2defc921c8ef1bf406f79c691ef0f924fc3f778d28cf35`.
+This confirms physical NCCL execution for `PE_moe`, but not the 32-GPU
+`PE_dense` candidate, so `e0_closed` remains `false`.
+
 Typical workflow:
 
 ```text

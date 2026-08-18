@@ -1030,6 +1030,18 @@ cobertura_posible    = 1 − FUERA_DE_PE / 30
    Esto confirma inicialización CUDA y construcción de mallas, no entrenamiento,
    colectivas NCCL ni multi-GPU físico; `e0_closed` permanece en `false`.
 
+   **Evidencia física NCCL de `PE_moe` (calibración parcial, no cierre de
+   E0):** el 2026-08-18, `scripts/e0_nccl_validation.py` ejecutó el candidato
+   congelado de `PE_moe` sobre ocho NVIDIA GeForce RTX 4090 físicas. Ocho
+   procesos NCCL, uno por GPU, redujeron los valores de rango `1..8` al valor
+   esperado `36`, y el paso de Trainer posterior se completó. El resumen
+   sanitizado está en `e0-nccl-pe-moe-evidence.json`; el artefacto externo
+   bruto tiene SHA-256
+   `c43f9688c9d5ee7b7a2defc921c8ef1bf406f79c691ef0f924fc3f778d28cf35`.
+   Esto confirma `PE_moe` con multi-GPU/NCCL físico. `PE_dense` requiere 32
+   GPU y sigue sin validación física; por ello `e0_closed` permanece en
+   `false`.
+
    **Resuelve la atención al eje `cp`:** bajo `spmd_backend="default"`, `cp`
    **sí** forma su propia malla unidimensional con grupo de comunicación real
    (`dataloading_mesh["cp"]`), independiente de que además participe,
