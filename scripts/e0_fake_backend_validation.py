@@ -127,6 +127,7 @@ def run_candidate(
             "--config",
             pe_name,
             "--comm.mode=fake_backend",
+            "--training.disable_cuda_graphs",
             "--training.steps",
             "1",
         ]

@@ -243,7 +243,9 @@ Python environment, constructs each PE directly from the frozen manifest, and
 runs one real Trainer step with TorchTitan's `comm.mode=fake_backend`. Reports
 must be written outside this checkout and are only labelled
 `CONFIRMED_CUDA_FAKE_BACKEND` after the device mesh is built and training
-finishes successfully for every selected PE.
+finishes successfully for every selected PE. The harness disables CUDA Graphs
+because the pinned TorchTitan SHA rejects them when pipeline parallelism is
+active.
 
 ```text
 python scripts/e0_fake_backend_validation.py \

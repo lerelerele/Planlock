@@ -39,6 +39,17 @@ class FakeBackendValidationTests(unittest.TestCase):
         self.assertIn("config.parallelism.tensor_parallel_degree = 2", source)
         self.assertIn("def PE_dense():", source)
 
+    @patch.object(MODULE.subprocess, "run")
+    def test_runner_disables_cuda_graphs_for_pipeline_parallelism(self, run) -> None:
+        run.return_value.returncode = 0
+        run.return_value.stdout = (
+            "Building device mesh with parallelism:\nTraining completed\n"
+        )
+        run.return_value.stderr = ""
+        MODULE.run_candidate(Path("repo"), "PE_dense", self.pe, 60)
+        command = run.call_args.args[0]
+        self.assertIn("--training.disable_cuda_graphs", command)
+
     def test_rejects_output_inside_checkout(self) -> None:
         with self.assertRaisesRegex(ValueError, "outside"):
             MODULE.external_output(SCRIPT.parent / "report.json")
