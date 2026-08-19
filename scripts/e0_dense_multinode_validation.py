@@ -282,8 +282,9 @@ def torchrun_command(
     nproc_per_node: int,
     rdzv_endpoint: str,
     rdzv_id: str,
+    local_address: str | None = None,
 ) -> list[str]:
-    return [
+    command = [
         sys.executable,
         "-m",
         "torch.distributed.run",
@@ -293,13 +294,18 @@ def torchrun_command(
         "--rdzv_backend=c10d",
         f"--rdzv_endpoint={rdzv_endpoint}",
         f"--rdzv_id={rdzv_id}",
-        "--rdzv_conf=timeout=1800",
+        f"--rdzv_conf=timeout=1800,is_host={'true' if node_rank == 0 else 'false'}",
+    ]
+    if local_address:
+        command.append(f"--local_addr={local_address}")
+    command.extend([
         "--local-ranks-filter=0",
         "--tee=3",
         "-m",
         module,
         *args,
-    ]
+    ])
+    return command
 
 
 def run_nccl_probe(
@@ -312,6 +318,7 @@ def run_nccl_probe(
     nproc_per_node: int,
     rdzv_endpoint: str,
     network_interface: str | None,
+    local_address: str | None,
 ) -> dict[str, object]:
     (Path(directory) / "planlock_dense_nccl_probe.py").write_text(
         nccl_probe_source(), encoding="utf-8"
@@ -326,6 +333,7 @@ def run_nccl_probe(
             nproc_per_node=nproc_per_node,
             rdzv_endpoint=rdzv_endpoint,
             rdzv_id="planlock-e0-dense-probe",
+            local_address=local_address,
         ),
         cwd=reference_repo,
         env=env,
@@ -376,6 +384,7 @@ def run_training(
     nproc_per_node: int,
     rdzv_endpoint: str,
     network_interface: str | None,
+    local_address: str | None,
 ) -> dict[str, object]:
     (Path(directory) / "planlock_e0_dense_runtime.py").write_text(
         runtime_module(pe), encoding="utf-8"
@@ -395,6 +404,7 @@ def run_training(
         nproc_per_node=nproc_per_node,
         rdzv_endpoint=rdzv_endpoint,
         rdzv_id="planlock-e0-dense-training",
+        local_address=local_address,
     )
     started = time.monotonic()
     result = subprocess.run(
@@ -433,6 +443,7 @@ def run(
     nproc_per_node: int,
     rdzv_endpoint: str,
     network_interface: str | None = None,
+    local_address: str | None = None,
     timeout: int = 1800,
 ) -> dict[str, object]:
     if nnodes < 2:
@@ -461,6 +472,7 @@ def run(
             nproc_per_node=nproc_per_node,
             rdzv_endpoint=rdzv_endpoint,
             network_interface=network_interface,
+            local_address=local_address,
         )
         training = (
             run_training(
@@ -473,6 +485,7 @@ def run(
                 nproc_per_node=nproc_per_node,
                 rdzv_endpoint=rdzv_endpoint,
                 network_interface=network_interface,
+                local_address=local_address,
             )
             if nccl["status"] == "CONFIRMED_NCCL_ALL_REDUCE"
             else {
@@ -499,6 +512,7 @@ def run(
             "node_rank": node_rank,
             "rdzv_endpoint": rdzv_endpoint,
             "network_interface": network_interface,
+            "local_address": local_address,
         },
         "runtime": runtime,
         "local_nvidia": topology,
@@ -527,6 +541,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument("--rdzv-endpoint", required=True)
     parser.add_argument("--network-interface")
+    parser.add_argument("--local-address")
     parser.add_argument("--timeout", type=int, default=1800)
     args = parser.parse_args(argv)
     planlock_repo = Path(__file__).resolve().parents[1]
@@ -543,6 +558,7 @@ def main(argv: list[str] | None = None) -> int:
             nproc_per_node=args.nproc_per_node,
             rdzv_endpoint=args.rdzv_endpoint,
             network_interface=args.network_interface,
+            local_address=args.local_address,
             timeout=args.timeout,
         )
         if args.node_rank == 0:
