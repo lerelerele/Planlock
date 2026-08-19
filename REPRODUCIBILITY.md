@@ -356,10 +356,18 @@ written to:
 ~/planlock-e0-dense-evidence/e0-nccl-pe-dense.json
 ```
 
-Copy that report and verify its printed SHA-256 before destroying all four
+Copy that report and verify its printed SHA-256 before destroying the rented
 nodes. A missing rank, wrong GPU count, failed AllReduce, failed Trainer step,
 dirty checkout, mismatched manifest, or invalid prior `PE_moe` evidence leaves
 E0 open and returns a nonzero status.
+
+The 2026-08-20 physical run used eight distinct hosts with four NVIDIA RTX PRO
+4500 Blackwell GPUs each. All 32 UUIDs were unique, the NCCL reduction of rank
+values `1..32` produced the expected value `528`, and the frozen `PE_dense`
+Trainer step completed. The sanitized record is
+`e0-nccl-pe-dense-evidence.json`; it pins the external raw report by SHA-256
+`29d489668016b6f7afa4b092ded046d885fa9ef5a18ecffdf24d0617ef161cf5`.
+Together with the prior physical `PE_moe` record, this sets `e0_closed: true`.
 
 Typical workflow:
 

@@ -1038,9 +1038,20 @@ cobertura_posible    = 1 − FUERA_DE_PE / 30
    sanitizado está en `e0-nccl-pe-moe-evidence.json`; el artefacto externo
    bruto tiene SHA-256
    `c43f9688c9d5ee7b7a2defc921c8ef1bf406f79c691ef0f924fc3f778d28cf35`.
-   Esto confirma `PE_moe` con multi-GPU/NCCL físico. `PE_dense` requiere 32
-   GPU y sigue sin validación física; por ello `e0_closed` permanece en
-   `false`.
+   Esto confirmó `PE_moe` con multi-GPU/NCCL físico. En ese momento,
+   `PE_dense` requería todavía 32 GPU y no tenía validación física; por ello
+   `e0_closed` permanecía en `false`.
+
+   **Cierre físico de `PE_dense` y E0:** el 2026-08-20,
+   `scripts/e0_dense_multinode_validation.py` ejecutó el candidato congelado
+   de `PE_dense` sobre 32 NVIDIA RTX PRO 4500 Blackwell físicas, distribuidas
+   uniformemente como ocho hosts distintos por cuatro GPU. Los 32 UUID fueron
+   únicos; NCCL redujo los valores de rango `1..32` al valor esperado `528`, y
+   el paso de Trainer posterior se completó. El resumen sanitizado está en
+   `e0-nccl-pe-dense-evidence.json`; el artefacto externo bruto tiene SHA-256
+   `29d489668016b6f7afa4b092ded046d885fa9ef5a18ecffdf24d0617ef161cf5`.
+   Junto con la evidencia física previa de `PE_moe`, esto fija
+   `e0_closed=true`.
 
    **Resuelve la atención al eje `cp`:** bajo `spmd_backend="default"`, `cp`
    **sí** forma su propia malla unidimensional con grupo de comunicación real

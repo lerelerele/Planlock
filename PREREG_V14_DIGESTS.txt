@@ -1,0 +1,14 @@
+Planlock preregistration v14 freeze record
+Observed: 2026-08-20
+
+SHA-256 (file bytes)
+0ddecd6e7c727c2dfd5da0775bca7b333d992ee164c4adb2f359e2a8e417cc62  preregistro-huella-estructural-v14.md
+78539f12e15e2de582bb47fdc74e6e4e74d2943f761eae1c6be85d7e01b74003  e0-nccl-pe-dense-evidence.json
+a3c9eec6f803e5e374d568932af852a400b4d8b1f7c897322890f8315322fa77  e0-manifest-candidate.json
+
+External E0 artifacts (SHA-256)
+29d489668016b6f7afa4b092ded046d885fa9ef5a18ecffdf24d0617ef161cf5  e0-nccl-pe-dense.json
+4254ccbf5115a289d075a6c6d6927a04fce0bc2e167c476622d3d986d332772b  e0-r16-20260819T234511Z-bw4500-8x4-train-results.json
+
+Canonical manifest digest used by the validators
+5fab96c2a14b9858179082ca7f5a26ebe6bc051f08da4c1d7d98d24fee357af2

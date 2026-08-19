@@ -1,0 +1,46 @@
+{
+  "schema_version": 1,
+  "observed_on": "2026-08-20",
+  "status": "CONFIRMED_PHYSICAL_NCCL_PE_DENSE",
+  "source_artifact": {
+    "storage": "external",
+    "sha256": "29d489668016b6f7afa4b092ded046d885fa9ef5a18ecffdf24d0617ef161cf5"
+  },
+  "source_logs": {
+    "storage": "external",
+    "sha256": "4254ccbf5115a289d075a6c6d6927a04fce0bc2e167c476622d3d986d332772b"
+  },
+  "planlock_sha": "f0630c1dda3e5599a1a901124186aee3502ff139",
+  "reference_sha": "9a711521ac2973fe230a3f38efc6aedfc7d1f9c6",
+  "manifest_sha256": "5fab96c2a14b9858179082ca7f5a26ebe6bc051f08da4c1d7d98d24fee357af2",
+  "runtime": {
+    "torch": "2.15.0.dev20260819+cu130",
+    "torch_cuda": "13.0",
+    "nccl_version": "2.30.7",
+    "physical_gpu_count_used": 32,
+    "physical_host_count": 8,
+    "gpus_per_host": 4,
+    "device_name": "NVIDIA RTX PRO 4500 Blackwell",
+    "backend": "nccl"
+  },
+  "nccl_probe": {
+    "world_size": 32,
+    "unique_gpu_uuids": 32,
+    "distinct_hostnames": 8,
+    "rank_values": "1..32",
+    "expected_all_reduce_sum": 528,
+    "observed_all_reduce_sum": 528,
+    "completed": true
+  },
+  "training": {
+    "pe": "PE_dense",
+    "world_size": 32,
+    "mesh_built": true,
+    "trainer_step_completed": true
+  },
+  "claims": {
+    "pe_moe_physical_nccl_validated": true,
+    "pe_dense_physical_nccl_validated": true,
+    "e0_closed": true
+  }
+}

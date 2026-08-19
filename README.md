@@ -255,10 +255,11 @@ instrumentation is built and tested; its current boundary is:
   misrepresented as physical NCCL validation.
 - `PE_moe` has completed a physical eight-GPU NCCL probe and Trainer step. The
   sanitized record is [`e0-nccl-pe-moe-evidence.json`](e0-nccl-pe-moe-evidence.json).
-- The four-node, 32-GPU `PE_dense` validator is implemented and tested, but has
-  not yet been executed on physical hardware.
-- Therefore **E0 remains open**. There is no signed `prereg-v14` tag and no
-  claim that the falsification study has started.
+- `PE_dense` completed a physical 32-GPU NCCL probe and Trainer step on eight
+  distinct four-GPU hosts. The sanitized record is
+  [`e0-nccl-pe-dense-evidence.json`](e0-nccl-pe-dense-evidence.json).
+- Therefore **E0 is closed**. The falsification study starts only after the
+  exact preregistration document is committed, digested, and tagged `prereg-v14`.
 
 The order of work remains deliberately inverted from the usual one:
 
