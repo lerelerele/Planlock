@@ -310,8 +310,9 @@ This confirms physical NCCL execution for `PE_moe`, but not the 32-GPU
 ### Thirty-two-GPU multi-node PE_dense validation
 
 `scripts/e0_dense_multinode_validation.py` is the fail-closed physical
-follow-up for `PE_dense`. It requires exactly four nodes with eight visible
-CUDA devices each, a private address for node 0 reachable from every node, and
+follow-up for `PE_dense`. It requires a uniform multi-node layout totaling
+exactly 32 visible CUDA devices (for example 4 nodes x 8 GPUs or 8 x 4), a
+private address for node 0 reachable from every node, and
 the same clean Planlock and pinned TorchTitan checkouts everywhere. It first
 runs a 32-rank NCCL probe, gathers hostname/GPU UUID metadata for every rank,
 and requires the reduction of rank values `1..32` to equal `528`. Only after
@@ -328,9 +329,9 @@ cluster must permit private TCP traffic to the rendezvous port (default
 `29500`) and NCCL traffic between nodes. Prefer the provider's private
 high-speed interface; do not expose the rendezvous port to the public Internet.
 
-On all four nodes, clone the same Planlock commit and start the bootstrap at
-approximately the same time. Use the private address of node 0 and assign each
-node one unique rank:
+On every node, clone the same Planlock commit and start the bootstrap at
+approximately the same time. Use the private address of node 0, assign each
+node one unique rank, and pass the same uniform node/GPU counts everywhere:
 
 ```text
 git clone https://github.com/lerelerele/Planlock.git

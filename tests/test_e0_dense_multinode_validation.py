@@ -38,7 +38,7 @@ class DenseMultinodeValidationTests(unittest.TestCase):
         self.assertIn("config.parallelism.context_parallel_degree = 2", source)
         self.assertIn("config.parallelism.pipeline_parallel_degree = 2", source)
 
-    def test_torchrun_uses_four_nodes_and_eight_local_processes(self) -> None:
+    def test_torchrun_uses_requested_uniform_layout(self) -> None:
         command = MODULE.torchrun_command(
             "probe",
             nnodes=4,
@@ -53,6 +53,23 @@ class DenseMultinodeValidationTests(unittest.TestCase):
         self.assertIn("--rdzv_endpoint=10.0.0.1:29500", command)
         self.assertIn("--rdzv_id=probe-id", command)
         self.assertIn("--rdzv_conf=timeout=1800", command)
+
+    def test_rank_inventory_requires_unique_gpus_on_uniform_distinct_hosts(self) -> None:
+        inventory = [
+            {
+                "rank": rank,
+                "hostname": f"node-{rank // 4}",
+                "device_uuid": f"GPU-{rank}",
+            }
+            for rank in range(32)
+        ]
+        self.assertTrue(
+            MODULE.validate_rank_inventory(inventory, nnodes=8, nproc_per_node=4)
+        )
+        inventory[-1]["device_uuid"] = inventory[0]["device_uuid"]
+        self.assertFalse(
+            MODULE.validate_rank_inventory(inventory, nnodes=8, nproc_per_node=4)
+        )
 
     def test_nccl_probe_requires_32_rank_sum_and_inventory(self) -> None:
         source = MODULE.nccl_probe_source()
@@ -73,6 +90,23 @@ class DenseMultinodeValidationTests(unittest.TestCase):
                 nproc_per_node=8,
                 rdzv_endpoint="localhost:29500",
             )
+
+    def test_single_node_and_non_32_gpu_layouts_are_rejected(self) -> None:
+        for nnodes, nproc in ((1, 32), (8, 2), (3, 8)):
+            with (
+                self.subTest(nnodes=nnodes, nproc=nproc),
+                self.assertRaisesRegex(ValueError, "at least two|32 GPUs"),
+            ):
+                MODULE.run(
+                    Path("planlock"),
+                    Path("torchtitan"),
+                    self.manifest,
+                    self.moe_evidence,
+                    nnodes=nnodes,
+                    node_rank=0,
+                    nproc_per_node=nproc,
+                    rdzv_endpoint="10.0.0.1:29500",
+                )
 
     @patch.object(MODULE, "run_training")
     @patch.object(MODULE, "run_nccl_probe")
@@ -107,6 +141,39 @@ class DenseMultinodeValidationTests(unittest.TestCase):
         self.assertEqual(report["cluster"]["world_size"], 32)
         self.assertTrue(report["claims"]["pe_dense_physical_nccl_validated"])
         self.assertTrue(report["claims"]["pe_moe_physical_nccl_validated"])
+        self.assertTrue(report["claims"]["e0_closed"])
+
+    @patch.object(MODULE, "run_training")
+    @patch.object(MODULE, "run_nccl_probe")
+    @patch.object(MODULE, "local_nvidia_topology", return_value={"inventory": "4", "topology": "PIX"})
+    @patch.object(
+        MODULE,
+        "cuda_probe",
+        return_value={"cuda_available": True, "device_count": 4, "nccl_available": True},
+    )
+    @patch.object(MODULE, "git_head")
+    def test_eight_by_four_layout_can_close_e0(
+        self, git_head, _cuda, _topology, nccl, training
+    ) -> None:
+        git_head.side_effect = [MODULE.REFERENCE_SHA, "planlock-sha"]
+        nccl.return_value = {"status": "CONFIRMED_NCCL_ALL_REDUCE"}
+        training.return_value = {
+            "status": "CONFIRMED_PHYSICAL_NCCL_PE_DENSE",
+            "mesh_built": True,
+            "training_completed": True,
+        }
+        report = MODULE.run(
+            Path("planlock"),
+            Path("torchtitan"),
+            self.manifest,
+            self.moe_evidence,
+            nnodes=8,
+            node_rank=0,
+            nproc_per_node=4,
+            rdzv_endpoint="10.0.0.1:29500",
+        )
+        self.assertEqual(report["cluster"]["nnodes"], 8)
+        self.assertEqual(report["cluster"]["nproc_per_node"], 4)
         self.assertTrue(report["claims"]["e0_closed"])
 
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Validate frozen PE_dense on four eight-GPU nodes with physical NCCL."""
+"""Validate frozen PE_dense on a uniform 32-GPU multi-node NCCL cluster."""
 
 import argparse
 import hashlib
@@ -14,8 +14,8 @@ from pathlib import Path
 
 REFERENCE_SHA = "9a711521ac2973fe230a3f38efc6aedfc7d1f9c6"
 PE_NAME = "PE_dense"
-EXPECTED_NNODES = 4
-EXPECTED_LOCAL_WORLD_SIZE = 8
+DEFAULT_NNODES = 4
+DEFAULT_LOCAL_WORLD_SIZE = 8
 EXPECTED_WORLD_SIZE = 32
 EXPECTED_ALL_REDUCE_SUM = 528
 PARALLELISM_FIELDS = (
@@ -134,7 +134,7 @@ def runtime_module(pe: dict[str, object]) -> str:
     )
 
 
-def cuda_probe(reference_repo: Path) -> dict[str, object]:
+def cuda_probe(reference_repo: Path, expected_device_count: int) -> dict[str, object]:
     source = """
 import json
 import torch
@@ -158,14 +158,18 @@ print(json.dumps({
         check=True,
     )
     probe = json.loads(result.stdout)
-    if not probe["cuda_available"] or probe["device_count"] != EXPECTED_LOCAL_WORLD_SIZE:
-        raise RuntimeError("exactly eight visible CUDA devices are required per node")
+    if not probe["cuda_available"] or probe["device_count"] != expected_device_count:
+        raise RuntimeError(
+            f"exactly {expected_device_count} visible CUDA devices are required per node"
+        )
     if not probe["nccl_available"]:
         raise RuntimeError("PyTorch NCCL support is required")
     return probe
 
 
-def local_nvidia_topology(reference_repo: Path) -> dict[str, str]:
+def local_nvidia_topology(
+    reference_repo: Path, expected_device_count: int
+) -> dict[str, str]:
     query = subprocess.run(
         [
             "nvidia-smi",
@@ -185,9 +189,28 @@ def local_nvidia_topology(reference_repo: Path) -> dict[str, str]:
         check=True,
     )
     rows = [line for line in query.stdout.splitlines() if line.strip()]
-    if len(rows) != EXPECTED_LOCAL_WORLD_SIZE:
-        raise RuntimeError("nvidia-smi did not report exactly eight local GPUs")
+    if len(rows) != expected_device_count:
+        raise RuntimeError(
+            f"nvidia-smi did not report exactly {expected_device_count} local GPUs"
+        )
     return {"inventory": query.stdout, "topology": topology.stdout}
+
+
+def validate_rank_inventory(
+    inventory: list[dict[str, object]], *, nnodes: int, nproc_per_node: int
+) -> bool:
+    if len(inventory) != EXPECTED_WORLD_SIZE:
+        return False
+    uuids = {item.get("device_uuid") for item in inventory}
+    if None in uuids or len(uuids) != EXPECTED_WORLD_SIZE:
+        return False
+    host_counts: dict[object, int] = {}
+    for item in inventory:
+        hostname = item.get("hostname")
+        if not hostname:
+            return False
+        host_counts[hostname] = host_counts.get(hostname, 0) + 1
+    return len(host_counts) == nnodes and set(host_counts.values()) == {nproc_per_node}
 
 
 def nccl_probe_source() -> str:
@@ -326,7 +349,11 @@ def run_nccl_probe(
         and payload.get("passed") is True
         and payload.get("world_size") == EXPECTED_WORLD_SIZE
         and payload.get("observed_sum") == EXPECTED_ALL_REDUCE_SUM
-        and len(payload.get("rank_inventory", [])) == EXPECTED_WORLD_SIZE
+        and validate_rank_inventory(
+            payload.get("rank_inventory", []),
+            nnodes=nnodes,
+            nproc_per_node=nproc_per_node,
+        )
     )
     passed = result.returncode == 0 and marker_ok
     return {
@@ -408,8 +435,10 @@ def run(
     network_interface: str | None = None,
     timeout: int = 1800,
 ) -> dict[str, object]:
-    if nnodes != EXPECTED_NNODES or nproc_per_node != EXPECTED_LOCAL_WORLD_SIZE:
-        raise ValueError("PE_dense requires exactly four nodes with eight GPUs each")
+    if nnodes < 2:
+        raise ValueError("PE_dense physical validation requires at least two nodes")
+    if nproc_per_node < 1 or nnodes * nproc_per_node != EXPECTED_WORLD_SIZE:
+        raise ValueError("PE_dense requires a uniform multi-node layout of 32 GPUs")
     if not 0 <= node_rank < nnodes:
         raise ValueError("node rank is outside the cluster")
     if not rdzv_endpoint or rdzv_endpoint.startswith("localhost"):
@@ -420,8 +449,8 @@ def run(
     pe = validate_manifest(manifest)
     manifest_digest = hashlib.sha256(canonical_bytes(manifest)).hexdigest()
     prior_moe = validate_pe_moe_evidence(pe_moe_evidence, manifest_digest)
-    runtime = cuda_probe(reference_repo)
-    topology = local_nvidia_topology(reference_repo)
+    runtime = cuda_probe(reference_repo, nproc_per_node)
+    topology = local_nvidia_topology(reference_repo, nproc_per_node)
     with tempfile.TemporaryDirectory(prefix="planlock-e0-dense-") as directory:
         nccl = run_nccl_probe(
             reference_repo,
@@ -491,9 +520,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--manifest", type=Path, default=Path("e0-manifest-candidate.json"))
     parser.add_argument("--pe-moe-evidence", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
-    parser.add_argument("--nnodes", type=int, default=EXPECTED_NNODES)
+    parser.add_argument("--nnodes", type=int, default=DEFAULT_NNODES)
     parser.add_argument("--node-rank", type=int, required=True)
-    parser.add_argument("--nproc-per-node", type=int, default=EXPECTED_LOCAL_WORLD_SIZE)
+    parser.add_argument(
+        "--nproc-per-node", type=int, default=DEFAULT_LOCAL_WORLD_SIZE
+    )
     parser.add_argument("--rdzv-endpoint", required=True)
     parser.add_argument("--network-interface")
     parser.add_argument("--timeout", type=int, default=1800)
