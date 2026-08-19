@@ -288,6 +288,9 @@ def torchrun_command(
     rdzv_id: str,
     local_address: str | None = None,
 ) -> list[str]:
+    master_address, separator, master_port = rdzv_endpoint.rpartition(":")
+    if not separator or not master_address or not master_port.isdigit():
+        raise ValueError("rendezvous endpoint must be HOST:PORT")
     command = [
         sys.executable,
         "-m",
@@ -295,10 +298,8 @@ def torchrun_command(
         f"--nnodes={nnodes}",
         f"--node_rank={node_rank}",
         f"--nproc_per_node={nproc_per_node}",
-        "--rdzv_backend=c10d",
-        f"--rdzv_endpoint={rdzv_endpoint}",
-        f"--rdzv_id={rdzv_id}",
-        f"--rdzv_conf=timeout=1800,is_host={'true' if node_rank == 0 else 'false'}",
+        f"--master_addr={master_address}",
+        f"--master_port={master_port}",
     ]
     if local_address:
         command.append(f"--local_addr={local_address}")

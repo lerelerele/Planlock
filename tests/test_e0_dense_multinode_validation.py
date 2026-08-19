@@ -51,9 +51,9 @@ class DenseMultinodeValidationTests(unittest.TestCase):
         self.assertIn("--nnodes=4", command)
         self.assertIn("--node_rank=2", command)
         self.assertIn("--nproc_per_node=8", command)
-        self.assertIn("--rdzv_endpoint=10.0.0.1:29500", command)
-        self.assertIn("--rdzv_id=probe-id", command)
-        self.assertIn("--rdzv_conf=timeout=1800,is_host=false", command)
+        self.assertIn("--master_addr=10.0.0.1", command)
+        self.assertIn("--master_port=29500", command)
+        self.assertNotIn("--rdzv_backend=c10d", command)
         self.assertIn("--local_addr=10.0.0.3", command)
 
         head_command = MODULE.torchrun_command(
@@ -65,7 +65,7 @@ class DenseMultinodeValidationTests(unittest.TestCase):
             rdzv_id="probe-id",
             local_address="10.0.0.1",
         )
-        self.assertIn("--rdzv_conf=timeout=1800,is_host=true", head_command)
+        self.assertIn("--node_rank=0", head_command)
 
     def test_rank_inventory_requires_unique_gpus_on_uniform_distinct_hosts(self) -> None:
         inventory = [
