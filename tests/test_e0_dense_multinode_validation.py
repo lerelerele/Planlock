@@ -89,6 +89,8 @@ class DenseMultinodeValidationTests(unittest.TestCase):
         self.assertIn('dist.init_process_group("nccl")', source)
         self.assertIn("dist.all_gather_object(identities, identity)", source)
         self.assertIn("dist.all_reduce(value)", source)
+        self.assertIn("PLANLOCK_NCCL_PROBE_FILE", source)
+        self.assertIn("Path(probe_file).write_text", source)
         self.assertEqual(MODULE.EXPECTED_ALL_REDUCE_SUM, 528)
 
     def test_localhost_rendezvous_is_rejected(self) -> None:

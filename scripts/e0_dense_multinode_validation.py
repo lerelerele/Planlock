@@ -216,6 +216,7 @@ def validate_rank_inventory(
 def nccl_probe_source() -> str:
     return """import json
 import os
+from pathlib import Path
 import socket
 import torch
 import torch.distributed as dist
@@ -248,6 +249,9 @@ payload = {
     "passed": value.item() == expected and len(identities) == dist.get_world_size(),
 }
 if rank == 0:
+    probe_file = os.environ.get("PLANLOCK_NCCL_PROBE_FILE")
+    if probe_file:
+        Path(probe_file).write_text(json.dumps(payload, sort_keys=True), encoding="utf-8")
     print("PLANLOCK_NCCL_PROBE=" + json.dumps(payload, sort_keys=True), flush=True)
 dist.destroy_process_group()
 if not payload["passed"]:
@@ -324,6 +328,8 @@ def run_nccl_probe(
         nccl_probe_source(), encoding="utf-8"
     )
     env = runtime_env(reference_repo, directory, network_interface)
+    probe_file = Path(directory) / "planlock-nccl-probe-result.json"
+    env["PLANLOCK_NCCL_PROBE_FILE"] = str(probe_file)
     started = time.monotonic()
     result = subprocess.run(
         torchrun_command(
@@ -352,6 +358,8 @@ def run_nccl_probe(
         None,
     )
     payload = json.loads(marker) if marker else None
+    if payload is None and node_rank == 0 and probe_file.exists():
+        payload = json.loads(probe_file.read_text(encoding="utf-8"))
     marker_ok = node_rank != 0 or (
         payload is not None
         and payload.get("passed") is True
