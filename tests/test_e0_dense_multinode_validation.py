@@ -156,7 +156,8 @@ class DenseMultinodeValidationTests(unittest.TestCase):
         self.assertEqual(report["cluster"]["world_size"], 32)
         self.assertTrue(report["claims"]["pe_dense_physical_nccl_validated"])
         self.assertTrue(report["claims"]["pe_moe_physical_nccl_validated"])
-        self.assertTrue(report["claims"]["e0_closed"])
+        self.assertTrue(report["claims"]["both_pes_physical_nccl_validated"])
+        self.assertFalse(report["claims"]["e0_closed"])
 
     @patch.object(MODULE, "run_training")
     @patch.object(MODULE, "run_nccl_probe")
@@ -167,7 +168,7 @@ class DenseMultinodeValidationTests(unittest.TestCase):
         return_value={"cuda_available": True, "device_count": 4, "nccl_available": True},
     )
     @patch.object(MODULE, "git_head")
-    def test_eight_by_four_layout_can_close_e0(
+    def test_eight_by_four_layout_validates_both_pes_but_does_not_close_e0(
         self, git_head, _cuda, _topology, nccl, training
     ) -> None:
         git_head.side_effect = [MODULE.REFERENCE_SHA, "planlock-sha"]
@@ -189,7 +190,8 @@ class DenseMultinodeValidationTests(unittest.TestCase):
         )
         self.assertEqual(report["cluster"]["nnodes"], 8)
         self.assertEqual(report["cluster"]["nproc_per_node"], 4)
-        self.assertTrue(report["claims"]["e0_closed"])
+        self.assertTrue(report["claims"]["both_pes_physical_nccl_validated"])
+        self.assertFalse(report["claims"]["e0_closed"])
 
 
 if __name__ == "__main__":

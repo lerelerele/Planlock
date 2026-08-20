@@ -41,6 +41,7 @@
   "claims": {
     "pe_moe_physical_nccl_validated": true,
     "pe_dense_physical_nccl_validated": true,
-    "e0_closed": true
+    "both_pes_physical_nccl_validated": true,
+    "e0_closed": false
   }
 }

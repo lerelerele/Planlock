@@ -1,8 +1,9 @@
 # Preregistro v14 — Estudio piloto de estabilidad de la huella estructural
 
-**Estado:** BORRADOR. **Listo para ejecutar E0.** La firma y el hash final
-esperan al resultado de E0 — validez real de los PEs bajo grupos distribuidos
-reales. La decisión sobre `routed_item` (identidad 19) quedó cerrada en el
+**Estado:** BORRADOR. **E0 abierto.** La validación física NCCL de ambos PEs
+está completa, pero faltan las huellas de referencia completas y los cuatro E6
+exigidos por §8.3.3. La firma y el hash final esperan a ese cierre. La decisión
+sobre `routed_item` (identidad 19) quedó cerrada en el
 dry-run de calibración sintético: ver §1.6.3, §1.6.4.B y §8.3.5.
 **Repositorio objetivo:** pytorch/torchtitan
 **HEAD de referencia:** `9a711521ac2973fe230a3f38efc6aedfc7d1f9c6`
@@ -824,6 +825,14 @@ B recibe el conjunto **mezclado y sin distinción de subconjunto**.
 
 ### 5.1 Cegado: dos personas (obligatorio)
 
+**Bloqueo pre-firma:** deben identificarse A y B y congelarse sus naturalezas
+(humano o proceso asistido por modelo), responsabilidades y procedimiento. Si B
+es asistido por modelo, se registrarán antes de la firma el proveedor, modelo y
+versión, parámetros, prompt/herramientas, política de contexto, y reglas de
+reintento y adjudicación. Una B asistida por modelo no se tratará como
+intercambiable con una revisora humana experta. No se inicia el etiquetado ni
+la derivación de huellas de la muestra mientras este bloque siga abierto.
+
 1. **A** clasifica y custodia los gold labels. No ve ninguna huella, nunca.
 2. **A** entrega a **B** pares de árboles fuente anonimizados junto con la
    definición completa de ambos PEs.
@@ -1042,7 +1051,7 @@ cobertura_posible    = 1 − FUERA_DE_PE / 30
    `PE_dense` requería todavía 32 GPU y no tenía validación física; por ello
    `e0_closed` permanecía en `false`.
 
-   **Cierre físico de `PE_dense` y E0:** el 2026-08-20,
+   **Validación física de `PE_dense` (no cierre de E0):** el 2026-08-20,
    `scripts/e0_dense_multinode_validation.py` ejecutó el candidato congelado
    de `PE_dense` sobre 32 NVIDIA RTX PRO 4500 Blackwell físicas, distribuidas
    uniformemente como ocho hosts distintos por cuatro GPU. Los 32 UUID fueron
@@ -1051,7 +1060,8 @@ cobertura_posible    = 1 − FUERA_DE_PE / 30
    `e0-nccl-pe-dense-evidence.json`; el artefacto externo bruto tiene SHA-256
    `29d489668016b6f7afa4b092ded046d885fa9ef5a18ecffdf24d0617ef161cf5`.
    Junto con la evidencia física previa de `PE_moe`, esto fija
-   `e0_closed=true`.
+   `both_pes_physical_nccl_validated=true`. E0 permanece abierto hasta derivar
+   las huellas de referencia completas y calcular los cuatro E6 de §8.3.3.
 
    **Resuelve la atención al eje `cp`:** bajo `spmd_backend="default"`, `cp`
    **sí** forma su propia malla unidimensional con grupo de comunicación real

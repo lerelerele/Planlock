@@ -1,10 +1,11 @@
-Planlock preregistration v14 freeze record
+Planlock preregistration v14 DRAFT integrity record
 Observed: 2026-08-20
+Status: NOT FROZEN; E0 and A/B definition remain open
 
-SHA-256 (file bytes)
-0ddecd6e7c727c2dfd5da0775bca7b333d992ee164c4adb2f359e2a8e417cc62  preregistro-huella-estructural-v14.md
-78539f12e15e2de582bb47fdc74e6e4e74d2943f761eae1c6be85d7e01b74003  e0-nccl-pe-dense-evidence.json
-a3c9eec6f803e5e374d568932af852a400b4d8b1f7c897322890f8315322fa77  e0-manifest-candidate.json
+SHA-256 (canonical repository bytes: UTF-8 with LF line endings)
+f0e55593063f8f332381de364547c98e86f8162b7b593f082f06f3c19c98e87c  preregistro-huella-estructural-v14.md
+1b0b191c3df1ee92b82b34b06da60858b52f6ab717b9d90b4d5cebceb64d3833  e0-nccl-pe-dense-evidence.json
+c0eded34ae81e8c94ced5db576a2d58fa493aa289f50eabb5e16cc5b96320669  e0-manifest-candidate.json
 
 External E0 artifacts (SHA-256)
 29d489668016b6f7afa4b092ded046d885fa9ef5a18ecffdf24d0617ef161cf5  e0-nccl-pe-dense.json

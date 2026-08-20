@@ -1,5 +1,8 @@
 # planlock
 
+[![License: Apache-2.0](https://img.shields.io/badge/License-Apache--2.0-blue.svg)](LICENSE)
+[![tests](https://github.com/lerelerele/Planlock/actions/workflows/tests.yml/badge.svg)](https://github.com/lerelerele/Planlock/actions/workflows/tests.yml)
+
 **A lockfile for the communication plan of a distributed training run. CI fails on regression, not on change.**
 
 ---
@@ -258,8 +261,9 @@ instrumentation is built and tested; its current boundary is:
 - `PE_dense` completed a physical 32-GPU NCCL probe and Trainer step on eight
   distinct four-GPU hosts. The sanitized record is
   [`e0-nccl-pe-dense-evidence.json`](e0-nccl-pe-dense-evidence.json).
-- Therefore **E0 is closed**. The falsification study starts only after the
-  exact preregistration document is committed, digested, and tagged `prereg-v14`.
+- Both PEs are therefore physically validated. **E0 remains open** until the
+  complete reference fingerprints and all four E6 values required by §8.3.3
+  are produced.
 
 The order of work remains deliberately inverted from the usual one:
 
@@ -272,10 +276,11 @@ Two limits are known in advance and are not negotiable:
 - A manual study cannot establish the service level objective. Bounding the false-alarm rate at the level a merge gate requires needs several hundred consecutive clean qualifying pull requests. That measurement exists only in shadow mode, over a quarter or more, under a frozen version of the checker.
 - **No gate is proposed before that shadow period completes.** The first deliverable is an opt-in test, not a blocking check.
 
-The checked-in preregistration is currently a draft. There is no signed
-`prereg-v14` tag yet; that tag and the final hash must be created only after
-E0 closes. See [reproducibility](REPRODUCIBILITY.md) for the sealed-study
-workflow.
+The checked-in preregistration is currently a draft. The published
+`prereg-v14` tag was created prematurely and must not be treated as an active
+preregistration. A replacement signed tag and final hash may be created only
+after E0 closes and A/B are frozen. See
+[reproducibility](REPRODUCIBILITY.md) for the sealed-study workflow.
 
 ## License
 

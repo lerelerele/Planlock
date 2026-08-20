@@ -319,10 +319,12 @@ and requires the reduction of rank values `1..32` to equal `528`. Only after
 that probe succeeds does it run one frozen `PE_dense` Trainer step.
 
 The validator also verifies `e0-nccl-pe-moe-evidence.json` against the same
-manifest digest and reference SHA. It can set `e0_closed: true` only when the
-new physical `PE_dense` run succeeds and the prior physical `PE_moe` evidence
-is valid. Only node 0 writes the final report; worker nodes return their local
-status without creating competing artifacts.
+manifest digest and reference SHA. When the new physical `PE_dense` run
+succeeds and the prior physical `PE_moe` evidence is valid, it sets
+`both_pes_physical_nccl_validated: true`. It deliberately leaves
+`e0_closed: false`: §8.3.3 additionally requires the complete reference
+fingerprints and all four E6 results. Only node 0 writes the final report;
+worker nodes return their local status without creating competing artifacts.
 
 Before starting billable nodes, make this commit available on every node. The
 cluster must permit private TCP traffic to the rendezvous port (default
@@ -367,7 +369,17 @@ values `1..32` produced the expected value `528`, and the frozen `PE_dense`
 Trainer step completed. The sanitized record is
 `e0-nccl-pe-dense-evidence.json`; it pins the external raw report by SHA-256
 `29d489668016b6f7afa4b092ded046d885fa9ef5a18ecffdf24d0617ef161cf5`.
-Together with the prior physical `PE_moe` record, this sets `e0_closed: true`.
+Together with the prior physical `PE_moe` record, this sets
+`both_pes_physical_nccl_validated: true`; E0 remains open pending complete
+reference fingerprints and the four E6 calculations required by §8.3.3.
+
+The checked-in evidence files are sanitized summaries. The raw reports and log
+tails are not published because they contain provider-specific host, network,
+and workload identifiers. Their SHA-256 values are integrity commitments, not
+availability guarantees: a third party cannot independently reproduce their
+contents from a digest alone. Claims intended for public verification must
+therefore be supported by the sanitized records and validators in this
+repository; access to a raw artifact must not be assumed.
 
 Typical workflow:
 

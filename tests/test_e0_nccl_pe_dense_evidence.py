@@ -7,7 +7,7 @@ EVIDENCE = ROOT / "e0-nccl-pe-dense-evidence.json"
 MANIFEST = ROOT / "e0-manifest-candidate.json"
 
 
-def test_physical_dense_evidence_closes_e0() -> None:
+def test_physical_dense_evidence_validates_both_pes_without_closing_e0() -> None:
     evidence = json.loads(EVIDENCE.read_text(encoding="utf-8"))
     manifest = json.loads(MANIFEST.read_text(encoding="utf-8"))
     canonical = json.dumps(
@@ -34,5 +34,6 @@ def test_physical_dense_evidence_closes_e0() -> None:
     assert evidence["claims"] == {
         "pe_moe_physical_nccl_validated": True,
         "pe_dense_physical_nccl_validated": True,
-        "e0_closed": True,
+        "both_pes_physical_nccl_validated": True,
+        "e0_closed": False,
     }

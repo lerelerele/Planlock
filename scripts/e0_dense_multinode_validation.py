@@ -504,7 +504,10 @@ def run(
             }
         )
     dense_confirmed = training["status"] == "CONFIRMED_PHYSICAL_NCCL_PE_DENSE"
-    e0_closed = dense_confirmed and prior_moe["status"] == "CONFIRMED_PHYSICAL_NCCL_PE_MOE"
+    both_pes_physical_nccl_validated = (
+        dense_confirmed
+        and prior_moe["status"] == "CONFIRMED_PHYSICAL_NCCL_PE_MOE"
+    )
     return {
         "status": (
             "CONFIRMED_PHYSICAL_NCCL_PE_DENSE"
@@ -532,7 +535,10 @@ def run(
         "claims": {
             "pe_moe_physical_nccl_validated": True,
             "pe_dense_physical_nccl_validated": dense_confirmed,
-            "e0_closed": e0_closed,
+            "both_pes_physical_nccl_validated": both_pes_physical_nccl_validated,
+            # Physical PE validation is necessary but not sufficient for E0.
+            # Section 8.3.3 also requires complete reference fingerprints and E6.
+            "e0_closed": False,
         },
     }
 
